@@ -20,6 +20,14 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any
 
+# Ensure UTF-8 output on Windows consoles
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from src.auth import authenticate_gmail
 from src.config import RECIPIENT_NAME, TIMEZONE
 from src.email_sender import EmailSender
@@ -41,11 +49,11 @@ def run_pipeline(dry_run: bool = False, days: int = 7) -> dict[str, Any]:
     """
     start_time = datetime.now(timezone.utc)
     date_str = start_time.strftime("%B %d, %Y")
-    print(f"============================================================")
-    print(f"🚀 Starting LinkedIn Post Ghostwriter Pipeline ({date_str})")
+    print("============================================================")
+    print(f"[START] LinkedIn Post Ghostwriter Pipeline ({date_str})")
     print(f"Mode: {'DRY RUN (preview only)' if dry_run else 'LIVE EXECUTION'}")
     print(f"Lookback Window: {days} days")
-    print(f"============================================================")
+    print("============================================================")
 
     memory_mgr = ProfileMemoryManager()
     memory = memory_mgr.load_memory()
@@ -94,7 +102,7 @@ def run_pipeline(dry_run: bool = False, days: int = 7) -> dict[str, Any]:
         email_result = None
         if dry_run:
             print("\n" + "=" * 60)
-            print("📝 [DRY RUN PREVIEW] LinkedIn Post Draft:")
+            print("[DRY RUN PREVIEW] LinkedIn Post Draft:")
             print("=" * 60)
             print(f"Topic: {topic}")
             print(f"Rationale: {draft_result.get('rationale')}\n")
@@ -132,7 +140,7 @@ def run_pipeline(dry_run: bool = False, days: int = 7) -> dict[str, Any]:
             print("[Step 6/6] Dry run: skipped saving updated memory.")
 
         elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
-        print(f"\n✅ Pipeline completed successfully in {elapsed:.1f}s.")
+        print(f"\n[SUCCESS] Pipeline completed successfully in {elapsed:.1f}s.")
         return {
             "success": True,
             "topic": topic,
@@ -145,7 +153,7 @@ def run_pipeline(dry_run: bool = False, days: int = 7) -> dict[str, Any]:
     except Exception as err:
         elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
         err_msg = f"{type(err).__name__}: {str(err)}"
-        print(f"\n❌ Pipeline failed after {elapsed:.1f}s: {err_msg}")
+        print(f"\n[FAILED] Pipeline failed after {elapsed:.1f}s: {err_msg}")
         traceback.print_exc()
 
         # Log failed run in memory
