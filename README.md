@@ -149,7 +149,7 @@ Run the interactive auth tool to generate a local `token.json`:
 ```powershell
 py -3.11 -m src.auth
 ```
-Follow the browser prompt to authorize `gmail.readonly`, `gmail.send`, and `gmail.modify` scopes.
+Follow the browser prompt to authorize `gmail.readonly` and `gmail.send` scopes.
 
 ### 3. Run Unit Tests
 ```powershell

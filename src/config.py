@@ -45,11 +45,9 @@ RECIPIENT_NAME: str = os.getenv("RECIPIENT_NAME", "Henry")
 # Gmail Scopes:
 # - gmail.readonly: Read digests and email summaries from inbox
 # - gmail.send: Send draft post to user's Gmail
-# - gmail.modify: Access metadata / mark processed if needed
 SCOPES: list[str] = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
-    "https://www.googleapis.com/auth/gmail.modify",
 ]
 
 # ===========================================================================
