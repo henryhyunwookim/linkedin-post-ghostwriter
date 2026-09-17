@@ -27,8 +27,8 @@ GCS_BUCKET_NAME: str = os.getenv("GCS_BUCKET_NAME", f"{GCP_PROJECT_ID}-linkedin-
 GCS_MEMORY_BLOB: str = os.getenv("GCS_MEMORY_BLOB", "linkedin-ghostwriter/profile_memory.json")
 LOCAL_MEMORY_FILE: str = os.getenv("LOCAL_MEMORY_FILE", "profile_memory.json")
 
-# Secret Manager secret name for Gmail OAuth token
-SECRET_NAME: str = os.getenv("SECRET_NAME", "linkedin-ghostwriter-token")
+# Secret Manager secret name for Gmail OAuth token (shared with existing services)
+SECRET_NAME: str = os.getenv("SECRET_NAME", "gmail-agent-token")
 
 # ===========================================================================
 # 2. Large Language Model (Gemini) Configuration
