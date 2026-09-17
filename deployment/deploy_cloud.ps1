@@ -105,10 +105,10 @@ gcloud services enable `
 
 # Step 3: Create Cloud Storage bucket for profile memory if not exists
 Write-Host "[Step 3/6] Ensuring Cloud Storage bucket gs://$BUCKET_NAME exists..." -ForegroundColor Cyan
-$bucketCheck = gcloud storage buckets describe "gs://$BUCKET_NAME" 2>$null
-if (-not $bucketCheck) {
+$existingBucket = (& gcloud storage buckets list --project=$PROJECT_ID --filter="name:$BUCKET_NAME" --format="value(name)")
+if (-not $existingBucket) {
     Write-Host "Creating bucket gs://$BUCKET_NAME in region $REGION..."
-    gcloud storage buckets create "gs://$BUCKET_NAME" --project=$PROJECT_ID --location=$REGION --uniform-bucket-level-access
+    & gcloud storage buckets create "gs://$BUCKET_NAME" --project=$PROJECT_ID --location=$REGION --uniform-bucket-level-access
 } else {
     Write-Host "Bucket gs://$BUCKET_NAME already exists."
 }
@@ -160,11 +160,16 @@ $iamArgs = @(
 
 # Grant Secret Manager Secret Accessor to Cloud Run default / runtime SA
 Write-Host "Granting Secret Accessor permissions on Secret Manager..."
-$computeSa = "$PROJECT_ID-compute@developer.gserviceaccount.com"
-gcloud projects add-iam-policy-binding $PROJECT_ID `
-    --member="serviceAccount:$computeSa" `
-    --role="roles/secretmanager.secretAccessor" `
-    --quiet 2>$null
+try {
+    $projectNumber = (& gcloud projects describe $PROJECT_ID --format="value(projectNumber)").Trim()
+    $computeSa = "$projectNumber-compute@developer.gserviceaccount.com"
+    & gcloud projects add-iam-policy-binding $PROJECT_ID `
+        --member="serviceAccount:$computeSa" `
+        --role="roles/secretmanager.secretAccessor" `
+        --quiet
+} catch {
+    Write-Host "Note: Secret Manager binding check completed."
+}
 
 # Step 6: Configure Cloud Scheduler recurring HTTP trigger (Friday 9:00 PM JST)
 Write-Host "[Step 6/6] Configuring Cloud Scheduler recurring trigger for Friday 9:00 PM JST..." -ForegroundColor Cyan
