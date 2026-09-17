@@ -4,14 +4,16 @@ __pycache__/
 *.pyc
 
 # Virtual environments
-.env
 .venv
 venv/
 
-# Secrets
+# Secrets (token is fetched from Secret Manager)
 token.json
-credentials.json
 service_account.json
+
+# Explicitly include configurations needed by the container
+!.env
+!credentials.json
 
 # Local state
 profile_memory.json
