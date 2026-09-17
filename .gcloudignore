@@ -1,0 +1,33 @@
+# Compiled Python files
+__pycache__/
+*.py[cod]
+*.pyc
+
+# Virtual environments
+.env
+.venv
+venv/
+
+# Secrets
+token.json
+credentials.json
+service_account.json
+
+# Local state
+profile_memory.json
+state.json
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+
+# Test caches
+.pytest_cache/
+
+# Logs
+*.log

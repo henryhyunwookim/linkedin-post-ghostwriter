@@ -1,0 +1,25 @@
+# Gmail API & Google OAuth
+google-api-python-client>=2.129.0
+google-auth-oauthlib>=1.2.0
+google-auth-httplib2>=0.2.0
+google-auth>=2.29.0
+
+# Gemini LLM
+google-generativeai>=0.8.0
+
+# Secret Manager (Gmail token storage on Cloud Run)
+google-cloud-secret-manager>=2.20.0
+
+# Cloud Storage (profile memory persistence)
+google-cloud-storage>=2.16.0
+
+# LinkedIn scraping & HTML parsing
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+
+# Web service (Cloud Run)
+flask>=3.0.0
+gunicorn>=22.0.0
+
+# Environment & utilities
+python-dotenv>=1.0.0
