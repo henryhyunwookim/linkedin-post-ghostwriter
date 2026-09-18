@@ -66,24 +66,52 @@ class PostDrafter:
         profile_data: dict[str, Any],
         recent_topics: list[str],
         topic_blacklist: list[str] | None = None,
+        suggested_topics: list[str] | None = None,
     ) -> dict[str, Any]:
         """Runs the topic selection and drafting pipeline via Gemini."""
         digests_text = self._prepare_digests_summary(digests)
         blacklist = topic_blacklist or []
+        avoided_topics = list(dict.fromkeys((recent_topics or []) + (suggested_topics or [])))
+
+        # Format actual posts and activities from LinkedIn
+        actual_posts = profile_data.get("actual_posts", [])
+        actual_posts_summary = "No recent posts recorded."
+        if actual_posts:
+            post_snippets = [
+                f"- [{p.get('date', 'Recent')}]: {p.get('post_text', '')[:250]}..."
+                for p in actual_posts[:5]
+                if p.get("post_text")
+            ]
+            if post_snippets:
+                actual_posts_summary = "\n".join(post_snippets)
+
+        recent_activity = profile_data.get("recent_activity", [])
+        recent_activity_summary = "No recent engagement recorded."
+        if recent_activity:
+            activity_snippets = [f"- {act[:200]}" for act in recent_activity[:5]]
+            recent_activity_summary = "\n".join(activity_snippets)
 
         prompt = f"""You are an elite ghostwriter crafting a LinkedIn post for Henry Hyunwoo Kim.
 
-### Author Profile & Tone:
+### Author Profile:
 - **Name**: {profile_data.get('name', 'Henry Hyunwoo Kim')}
 - **Headline**: {profile_data.get('headline', 'AI & Cloud Solutions Architect | Digital Transformation & ODA')}
 - **Background**: {profile_data.get('about', 'Specializes in AI architectures, serverless, and digital transformation in APAC')}
 - **Expertise Areas**: {', '.join(profile_data.get('expertise_areas', ['Generative AI', 'Cloud', 'Digital ODA']))}
 
+### Author's Authentic LinkedIn Presence & Current Focus:
+(Use these actual recent posts and activities to understand what Henry has genuinely been interested in, focusing on, and discussing):
+**Recent Posts by Henry:**
+{actual_posts_summary}
+
+**Recent Activity / Interactions on LinkedIn:**
+{recent_activity_summary}
+
 ### Constraints & Requirements:
 1. **Topic Selection**:
    - Pick the single most compelling and timely topic from the weekly digests below.
-   - Relevance: Must directly connect to recent AI developments, architectural innovations, or practical implementation (especially relevant to enterprise AI, cloud scaling, or digital capacity).
-   - AVOID these topics posted recently: {recent_topics if recent_topics else 'None yet'}
+   - Relevance: Must directly connect to recent AI developments, architectural innovations, or practical implementation (especially enterprise AI, cloud scaling, or digital capacity), while aligning closely with Henry's genuine interests and recent activity above.
+   - AVOID these topics already posted or recently suggested: {avoided_topics if avoided_topics else 'None'}
    - STRICTLY AVOID blacklisted themes: {blacklist}
 
 2. **Post Format & Style (CRITICAL)**:
@@ -103,7 +131,7 @@ class PostDrafter:
 Return ONLY a valid JSON object matching this schema:
 {{
   "topic": "Concise topic title",
-  "rationale": "1-2 sentences explaining why this topic was chosen based on the week's inputs",
+  "rationale": "1-2 sentences explaining why this topic was chosen based on the week's inputs and Henry's actual focus",
   "post_text": "Complete, ready-to-publish LinkedIn post text including the hook, body paragraphs, closing question, Sources section, and hashtags at the bottom.",
   "sources_used": [
     {{"title": "Source name or article title", "url": "URL if available"}}

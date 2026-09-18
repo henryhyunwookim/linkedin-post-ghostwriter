@@ -2,17 +2,26 @@
 LinkedIn Post Ghostwriter - Profile Memory Persistence Module.
 
 Purpose:
-    Manages persistent memory and historical records about the user, their
-    LinkedIn presence, past post topics, and accumulated insights.
-    
-    Persists data as a JSON file stored in Google Cloud Storage (GCS) on Cloud Run,
-    with automatic fallback to a local JSON file for local development and testing.
+    Manages persistent profile memory and historical records about the user,
+    their authentic LinkedIn presence, actual past published posts, and
+    accumulated technical focus areas.
+
+    Persists data canonically as a JSON file stored in Google Cloud Storage (GCS)
+    at `linkedin-ghostwriter/profile_memory.json`, with fallback to a temporary
+    cache path for offline local development.
+
+    CRITICAL ARCHITECTURAL RULES:
+    1. AI-generated drafts are NEVER saved into `post_history`.
+    2. `post_history` and `recent_activities` represent the author's ACTUAL
+       LinkedIn posts and activities.
+    3. Pipeline execution logs belong in `RunLogger` (`run_log.json`), NOT here.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import subprocess
 from datetime import datetime, timezone
 from typing import Any
 
@@ -20,7 +29,7 @@ from src.config import GCS_BUCKET_NAME, GCS_MEMORY_BLOB, LOCAL_MEMORY_FILE
 
 
 def _get_default_memory() -> dict[str, Any]:
-    """Returns baseline memory structure when no prior records exist."""
+    """Returns baseline memory structure when no prior cloud records exist."""
     return {
         "profile": {
             "name": "Henry Hyunwoo Kim",
@@ -39,18 +48,18 @@ def _get_default_memory() -> dict[str, Any]:
             "last_scraped": None,
         },
         "post_history": [],
+        "recent_activities": [],
         "topic_blacklist": [
             "politics",
             "unverified rumors",
             "generic motivational quotes",
         ],
         "accumulated_insights": [],
-        "run_log": [],
     }
 
 
 class ProfileMemoryManager:
-    """Manages reading, updating, and saving profile memory via GCS or local file."""
+    """Manages reading, updating, and saving profile memory via Google Cloud Storage."""
 
     def __init__(
         self,
@@ -71,12 +80,12 @@ class ProfileMemoryManager:
 
                 self._gcs_client = storage.Client()
             except Exception as e:
-                print(f"[ProfileMemory] GCS client initialization error: {e}")
                 self._gcs_client = None
         return self._gcs_client
 
     def load_memory(self) -> dict[str, Any]:
-        """Loads profile memory from GCS, or fallback to local file / baseline."""
+        """Loads profile memory from GCS with gcloud CLI and local temp fallback."""
+        # 1. Try Google Cloud Storage Python Client
         client = self._get_gcs_client()
         if client and self.bucket_name:
             try:
@@ -87,60 +96,85 @@ class ProfileMemoryManager:
                     parsed = json.loads(data)
                     print(f"[ProfileMemory] Loaded memory from GCS gs://{self.bucket_name}/{self.blob_path}")
                     return self._validate_and_fill_defaults(parsed)
-                else:
-                    print(
-                        f"[ProfileMemory] GCS blob gs://{self.bucket_name}/{self.blob_path} "
-                        "not found yet. Initializing default baseline."
-                    )
             except Exception as err:
-                print(f"[ProfileMemory] Error downloading from GCS: {err}. Checking local fallback.")
+                print(f"[ProfileMemory] Note: could not load from GCS SDK: {err}")
 
-        # Local file fallback
+        # 2. Try gcloud CLI fallback (works on any developer PC with active gcloud login)
+        if self.bucket_name:
+            try:
+                is_win = sys.platform == "win32"
+                cmd = ["gcloud", "storage", "cat", f"gs://{self.bucket_name}/{self.blob_path}"]
+                res = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=12, shell=is_win)
+                parsed = json.loads(res.stdout)
+                print(f"[ProfileMemory] Loaded memory from GCS via gcloud storage CLI.")
+                return self._validate_and_fill_defaults(parsed)
+            except Exception as e:
+                pass
+
+        # 3. Try local cache file (in OS temp directory)
         if os.path.exists(self.local_path):
             try:
                 with open(self.local_path, "r", encoding="utf-8") as f:
                     parsed = json.load(f)
-                print(f"[ProfileMemory] Loaded memory from local file: {self.local_path}")
+                print(f"[ProfileMemory] Loaded memory from local cache: {self.local_path}")
                 return self._validate_and_fill_defaults(parsed)
             except Exception as err:
-                print(f"[ProfileMemory] Error reading local file {self.local_path}: {err}")
+                print(f"[ProfileMemory] Error reading local cache {self.local_path}: {err}")
 
-        # Return default baseline
+        # 4. Fall back to default baseline
         print("[ProfileMemory] Using default initial baseline memory.")
         default_mem = _get_default_memory()
         self._save_local(default_mem)
         return default_mem
 
     def save_memory(self, memory_data: dict[str, Any]) -> bool:
-        """Saves memory to GCS and local copy."""
-        # Always write to local file for cache/diagnostics
-        self._save_local(memory_data)
+        """Saves profile memory to GCS and local temp cache."""
+        # Strip deprecated run_log if present
+        if "run_log" in memory_data:
+            del memory_data["run_log"]
 
+        self._save_local(memory_data)
+        if not self.bucket_name:
+            return True
+
+        data_str = json.dumps(memory_data, ensure_ascii=False, indent=2)
+
+        # 1. Try Google Cloud Storage Python Client
         client = self._get_gcs_client()
         if client and self.bucket_name:
             try:
                 bucket = client.bucket(self.bucket_name)
                 blob = bucket.blob(self.blob_path)
-                data = json.dumps(memory_data, ensure_ascii=False, indent=2)
-                blob.upload_from_string(data, content_type="application/json")
+                blob.upload_from_string(data_str, content_type="application/json")
                 print(f"[ProfileMemory] Successfully saved memory to gs://{self.bucket_name}/{self.blob_path}")
                 return True
             except Exception as err:
-                print(f"[ProfileMemory] Failed to save memory to GCS: {err}")
-                return False
-        return True
+                print(f"[ProfileMemory] Note: could not save via GCS SDK: {err}")
+
+        # 2. Try gcloud CLI fallback
+        if self.bucket_name and os.path.exists(self.local_path):
+            try:
+                is_win = sys.platform == "win32"
+                cmd = ["gcloud", "storage", "cp", self.local_path, f"gs://{self.bucket_name}/{self.blob_path}"]
+                subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=15, shell=is_win)
+                print(f"[ProfileMemory] Saved memory to GCS via gcloud storage CLI.")
+                return True
+            except Exception as err:
+                print(f"[ProfileMemory] Failed to save memory to GCS via CLI: {err}")
+
+        return False
 
     def _save_local(self, memory_data: dict[str, Any]) -> None:
-        """Save memory to local file."""
+        """Save memory to local temp cache."""
         try:
+            os.makedirs(os.path.dirname(os.path.abspath(self.local_path)), exist_ok=True)
             with open(self.local_path, "w", encoding="utf-8") as f:
                 json.dump(memory_data, f, ensure_ascii=False, indent=2)
-            print(f"[ProfileMemory] Saved memory locally to {self.local_path}")
         except Exception as e:
-            print(f"[ProfileMemory] Warning: could not write local memory file: {e}")
+            print(f"[ProfileMemory] Warning: could not write local cache file: {e}")
 
     def _validate_and_fill_defaults(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Ensure all required keys exist in memory dictionary."""
+        """Ensure all required keys exist and deprecated keys are removed."""
         defaults = _get_default_memory()
         for key, val in defaults.items():
             if key not in data:
@@ -149,58 +183,57 @@ class ProfileMemoryManager:
                 for sub_key, sub_val in val.items():
                     if sub_key not in data[key]:
                         data[key][sub_key] = sub_val
+
+        # Ensure run_log is purged from profile memory
+        if "run_log" in data:
+            del data["run_log"]
+
         return data
 
     def get_recent_topics(self, memory: dict[str, Any], limit: int = 8) -> list[str]:
-        """Extract recent topics already posted to avoid duplicate themes."""
+        """Extract topics from actual published posts to reflect author's covered themes."""
         history = memory.get("post_history", [])
         return [entry.get("topic", "") for entry in history[-limit:] if entry.get("topic")]
 
-    def record_run(
+    def update_from_linkedin(
         self,
         memory: dict[str, Any],
-        draft_result: dict[str, Any] | None,
-        status: str = "success",
-        profile_update: dict[str, Any] | None = None,
-        accumulated_points: list[dict[str, Any]] | None = None,
+        profile_data: Any,
     ) -> None:
-        """Appends run information, new post record, and insights into memory."""
+        """Updates memory with verified actual posts and activity extracted from LinkedIn.
+
+        NOTE: This does NOT add AI-generated draft posts to post_history.
+        """
         now_iso = datetime.now(timezone.utc).isoformat()
+        memory["profile"]["last_scraped"] = now_iso
 
-        # Update profile if provided
-        if profile_update:
-            if "headline" in profile_update and profile_update["headline"]:
-                memory["profile"]["headline"] = profile_update["headline"]
-            if "about" in profile_update and profile_update["about"]:
-                memory["profile"]["about"] = profile_update["about"]
-            memory["profile"]["last_scraped"] = now_iso
+        if hasattr(profile_data, "headline") and profile_data.headline:
+            memory["profile"]["headline"] = profile_data.headline
+        if hasattr(profile_data, "about") and profile_data.about:
+            memory["profile"]["about"] = profile_data.about
 
-        # Append post history if draft succeeded
-        if draft_result:
-            post_entry = {
-                "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-                "topic": draft_result.get("topic", "Untitled Topic"),
-                "rationale": draft_result.get("rationale", ""),
-                "post_text": draft_result.get("post_text", ""),
-                "hashtags": draft_result.get("hashtags", []),
-                "sources_used": draft_result.get("sources_used", []),
-            }
-            memory.setdefault("post_history", []).append(post_entry)
+        # Ingest actual posts from profile if scraped
+        actual_posts = getattr(profile_data, "actual_posts", [])
+        if actual_posts:
+            existing_texts = {p.get("post_text", "").strip() for p in memory.get("post_history", [])}
+            for post in actual_posts:
+                text = post.get("post_text", "").strip()
+                if text and text not in existing_texts:
+                    memory.setdefault("post_history", []).append(post)
+                    existing_texts.add(text)
 
-        # Append insights
-        if accumulated_points:
-            memory.setdefault("accumulated_insights", []).extend(accumulated_points)
-            # Keep accumulated insights capped at last 50 entries
-            if len(memory["accumulated_insights"]) > 50:
-                memory["accumulated_insights"] = memory["accumulated_insights"][-50:]
+            # Keep post_history capped at most recent 50 actual posts
+            if len(memory["post_history"]) > 50:
+                memory["post_history"] = memory["post_history"][-50:]
 
-        # Append run log
-        run_entry = {
-            "timestamp": now_iso,
-            "status": status,
-            "topic_chosen": draft_result.get("topic") if draft_result else None,
-        }
-        memory.setdefault("run_log", []).append(run_entry)
-        # Keep run log capped at 50 entries
-        if len(memory["run_log"]) > 50:
-            memory["run_log"] = memory["run_log"][-50:]
+        # Ingest recent LinkedIn activities (shares, comments, engagements)
+        recent_activity = getattr(profile_data, "recent_activity", [])
+        if recent_activity:
+            existing_act = set(memory.get("recent_activities", []))
+            for act in recent_activity:
+                if act and act not in existing_act:
+                    memory.setdefault("recent_activities", []).append(act)
+                    existing_act.add(act)
+
+            if len(memory["recent_activities"]) > 50:
+                memory["recent_activities"] = memory["recent_activities"][-50:]

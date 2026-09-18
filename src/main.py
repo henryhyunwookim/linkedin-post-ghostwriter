@@ -35,6 +35,7 @@ from src.gmail_reader import GmailReader
 from src.linkedin_scraper import LinkedInScraper
 from src.post_drafter import PostDrafter
 from src.profile_memory import ProfileMemoryManager
+from src.run_logger import RunLogger
 
 
 def run_pipeline(dry_run: bool = False, days: int = 7) -> dict[str, Any]:
@@ -57,6 +58,7 @@ def run_pipeline(dry_run: bool = False, days: int = 7) -> dict[str, Any]:
 
     memory_mgr = ProfileMemoryManager()
     memory = memory_mgr.load_memory()
+    run_logger = RunLogger()
 
     try:
         # Step 1: Authenticate Gmail
@@ -77,21 +79,29 @@ def run_pipeline(dry_run: bool = False, days: int = 7) -> dict[str, Any]:
         }
         print(f"[Step 2/6] Digests parsed: {digest_stats}")
 
-        # Step 3: Scrape LinkedIn Profile
-        print("\n[Step 3/6] Fetching LinkedIn profile data...")
+        # Step 3: Fetch LinkedIn Profile and Authentic Activity
+        print("\n[Step 3/6] Fetching LinkedIn profile data and recent activity...")
         scraper = LinkedInScraper()
         profile_data = scraper.scrape_profile(fallback_memory=memory)
-        print(f"[Step 3/6] Profile status: {profile_data.scrape_status}, Name: {profile_data.name}")
+        print(
+            f"[Step 3/6] Profile status: {profile_data.scrape_status}, "
+            f"Name: {profile_data.name}, "
+            f"Actual Posts: {len(profile_data.actual_posts)}, "
+            f"Activities: {len(profile_data.recent_activity)}"
+        )
 
         # Step 4: Gemini Topic Selection & Post Drafting
         print("\n[Step 4/6] Synthesizing topic and drafting post with Gemini...")
-        recent_topics = memory_mgr.get_recent_topics(memory, limit=8)
+        recent_posted_topics = memory_mgr.get_recent_topics(memory, limit=8)
+        recently_suggested_topics = run_logger.get_recently_suggested_topics(limit=8)
+
         drafter = PostDrafter()
         draft_result = drafter.draft_post(
             digests=digests,
             profile_data=profile_data.to_dict(),
-            recent_topics=recent_topics,
+            recent_topics=recent_posted_topics,
             topic_blacklist=memory.get("topic_blacklist", []),
+            suggested_topics=recently_suggested_topics,
         )
 
         topic = draft_result.get("topic", "Weekly AI Insight")
@@ -120,24 +130,29 @@ def run_pipeline(dry_run: bool = False, days: int = 7) -> dict[str, Any]:
                 draft_result=draft_result,
                 date_str=date_str,
                 digest_stats=digest_stats,
-                recent_topics=recent_topics,
+                recent_topics=recent_posted_topics,
                 profile_name=profile_data.name,
             )
             print("[Step 5/6] Draft review email successfully sent to Gmail.")
 
-        # Step 6: Update & Persist Profile Memory
-        print("\n[Step 6/6] Updating profile memory...")
+        # Step 6: Update Profile Memory & Record Run
+        print("\n[Step 6/6] Updating profile memory and recording run log...")
         if not dry_run:
-            memory_mgr.record_run(
-                memory=memory,
-                draft_result=draft_result,
-                status="success",
-                profile_update=profile_data.to_dict() if profile_data.scrape_status == "success" else None,
-            )
+            # Update profile memory with actual LinkedIn data (no drafts added)
+            memory_mgr.update_from_linkedin(memory, profile_data)
             memory_mgr.save_memory(memory)
-            print("[Step 6/6] Profile memory updated and saved.")
+            print("[Step 6/6] Profile memory updated in Google Cloud Storage.")
+
+            elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+            run_logger.record_run(
+                status="success",
+                topic_suggested=topic,
+                stats=digest_stats,
+                elapsed_seconds=elapsed,
+            )
+            print("[Step 6/6] Execution log and suggested topic recorded in GCS run log.")
         else:
-            print("[Step 6/6] Dry run: skipped saving updated memory.")
+            print("[Step 6/6] Dry run: skipped updating cloud memory and run log.")
 
         elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
         print(f"\n[SUCCESS] Pipeline completed successfully in {elapsed:.1f}s.")
@@ -156,12 +171,17 @@ def run_pipeline(dry_run: bool = False, days: int = 7) -> dict[str, Any]:
         print(f"\n[FAILED] Pipeline failed after {elapsed:.1f}s: {err_msg}")
         traceback.print_exc()
 
-        # Log failed run in memory
-        try:
-            memory_mgr.record_run(memory=memory, draft_result=None, status=f"failed: {err_msg}")
-            memory_mgr.save_memory(memory)
-        except Exception:
-            pass
+        if not dry_run:
+            try:
+                run_logger.record_run(
+                    status="failed",
+                    topic_suggested=None,
+                    stats={},
+                    elapsed_seconds=elapsed,
+                    error=err_msg,
+                )
+            except Exception:
+                pass
 
         return {
             "success": False,

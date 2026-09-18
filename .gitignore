@@ -57,9 +57,16 @@ state.json
 Thumbs.db
 desktop.ini
 
-# pytest
+# pytest & testing
 .pytest_cache/
 *.pyc
+tests/
+test_*.py
+*_test.py
+debug_*.py
+temp_*.json
 
-# Logs
+# Logs & runs
 *.log
+run_log.json
+
