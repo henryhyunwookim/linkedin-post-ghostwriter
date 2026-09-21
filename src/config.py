@@ -22,24 +22,27 @@ def _resolve_cloud_secret(secret_name: str, project_id: str) -> str | None:
     if not project_id:
         return None
 
-    # Attempt 1: Secret Manager Python SDK
+    import sys
+
+    is_win = sys.platform == "win32"
+    is_cloud_run = bool(os.getenv("K_SERVICE"))
+
+    # When running in Cloud Run, use the native Secret Manager Python SDK (uses metadata server)
+    if is_cloud_run:
+        try:
+            from google.cloud import secretmanager
+
+            client = secretmanager.SecretManagerServiceClient()
+            name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
+            response = client.access_secret_version(request={"name": name})
+            val = response.payload.data.decode("utf-8").strip()
+            if val:
+                return val
+        except Exception:
+            pass
+
+    # When running locally (or fallback), use gcloud CLI directly (instant execution via cached auth)
     try:
-        from google.cloud import secretmanager
-
-        client = secretmanager.SecretManagerServiceClient()
-        name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
-        response = client.access_secret_version(request={"name": name})
-        val = response.payload.data.decode("utf-8").strip()
-        if val:
-            return val
-    except Exception:
-        pass
-
-    # Attempt 2: gcloud CLI fallback (useful when running locally with active gcloud login)
-    try:
-        import sys
-
-        is_win = sys.platform == "win32"
         cmd = [
             "gcloud",
             "secrets",
@@ -49,12 +52,28 @@ def _resolve_cloud_secret(secret_name: str, project_id: str) -> str | None:
             f"--secret={secret_name}",
             f"--project={project_id}",
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10, shell=is_win)
+        res = subprocess.run(
+            cmd, capture_output=True, text=True, check=True, timeout=8, shell=is_win
+        )
         val = res.stdout.strip()
         if val:
             return val
     except Exception:
         pass
+
+    # Fallback to Python SDK if not in Cloud Run and gcloud was not available
+    if not is_cloud_run:
+        try:
+            from google.cloud import secretmanager
+
+            client = secretmanager.SecretManagerServiceClient()
+            name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
+            response = client.access_secret_version(request={"name": name}, timeout=5.0)
+            val = response.payload.data.decode("utf-8").strip()
+            if val:
+                return val
+        except Exception:
+            pass
 
     return None
 
