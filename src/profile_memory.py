@@ -30,20 +30,20 @@ from src.config import GCS_BUCKET_NAME, GCS_MEMORY_BLOB, LOCAL_MEMORY_FILE
 
 def _get_default_memory() -> dict[str, Any]:
     """Returns baseline memory structure when no prior cloud records exist."""
+    name = os.getenv("RECIPIENT_NAME", "Author")
     return {
         "profile": {
-            "name": "Henry Hyunwoo Kim",
-            "headline": "AI & Cloud Solutions Architect | Digital Transformation & ODA",
+            "name": name,
+            "headline": "AI & Cloud Solutions Architect",
             "about": (
-                "Focusing on AI innovation, digital capacity building, and "
-                "international development cooperation across Korea, Japan, "
-                "and developing nations."
+                "Specializing in AI system architectures, serverless deployments, "
+                "and digital transformation."
             ),
             "expertise_areas": [
                 "Generative AI & Agentic Systems",
                 "Cloud Architecture & Serverless Deployments",
-                "International Cooperation & Digital ODA (KOICA/JICA/UN)",
-                "AI Ethics, Policy, and Digital Inclusion",
+                "System Design & Scalability",
+                "AI Ethics & Enterprise Adoption",
             ],
             "last_scraped": None,
         },

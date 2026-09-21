@@ -91,17 +91,19 @@ class PostDrafter:
             activity_snippets = [f"- {act[:200]}" for act in recent_activity[:5]]
             recent_activity_summary = "\n".join(activity_snippets)
 
-        prompt = f"""You are an elite ghostwriter crafting a LinkedIn post for Henry Hyunwoo Kim.
+        author_name = profile_data.get("name") or os.getenv("RECIPIENT_NAME") or "Author"
+
+        prompt = f"""You are an elite ghostwriter crafting a LinkedIn post for {author_name}.
 
 ### Author Profile:
-- **Name**: {profile_data.get('name', 'Henry Hyunwoo Kim')}
-- **Headline**: {profile_data.get('headline', 'AI & Cloud Solutions Architect | Digital Transformation & ODA')}
-- **Background**: {profile_data.get('about', 'Specializes in AI architectures, serverless, and digital transformation in APAC')}
-- **Expertise Areas**: {', '.join(profile_data.get('expertise_areas', ['Generative AI', 'Cloud', 'Digital ODA']))}
+- **Name**: {profile_data.get('name', author_name)}
+- **Headline**: {profile_data.get('headline', 'AI & Cloud Solutions Architect')}
+- **Background**: {profile_data.get('about', 'Specializes in AI architectures, serverless, and cloud engineering')}
+- **Expertise Areas**: {', '.join(profile_data.get('expertise_areas', ['Generative AI', 'Cloud Architecture', 'System Design']))}
 
 ### Author's Authentic LinkedIn Presence & Current Focus:
-(Use these actual recent posts and activities to understand what Henry has genuinely been interested in, focusing on, and discussing):
-**Recent Posts by Henry:**
+(Use these actual recent posts and activities to understand what {author_name} has genuinely been interested in, focusing on, and discussing):
+**Recent Posts by {author_name}:**
 {actual_posts_summary}
 
 **Recent Activity / Interactions on LinkedIn:**
@@ -110,7 +112,7 @@ class PostDrafter:
 ### Constraints & Requirements:
 1. **Topic Selection**:
    - Pick the single most compelling and timely topic from the weekly digests below.
-   - Relevance: Must directly connect to recent AI developments, architectural innovations, or practical implementation (especially enterprise AI, cloud scaling, or digital capacity), while aligning closely with Henry's genuine interests and recent activity above.
+   - Relevance: Must directly connect to recent AI developments, architectural innovations, or practical implementation (especially enterprise AI, cloud scaling, or system design), while aligning closely with {author_name}'s genuine interests and recent activity above.
    - AVOID these topics already posted or recently suggested: {avoided_topics if avoided_topics else 'None'}
    - STRICTLY AVOID blacklisted themes: {blacklist}
 
@@ -131,7 +133,7 @@ class PostDrafter:
 Return ONLY a valid JSON object matching this schema:
 {{
   "topic": "Concise topic title",
-  "rationale": "1-2 sentences explaining why this topic was chosen based on the week's inputs and Henry's actual focus",
+  "rationale": "1-2 sentences explaining why this topic was chosen based on the week's inputs and {author_name}'s actual focus",
   "post_text": "Complete, ready-to-publish LinkedIn post text including the hook, body paragraphs, closing question, Sources section, and hashtags at the bottom.",
   "sources_used": [
     {{"title": "Source name or article title", "url": "URL if available"}}

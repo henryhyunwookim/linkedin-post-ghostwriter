@@ -31,7 +31,7 @@ flowchart TB
         GMAIL_IN["📬 Gmail API: Digest Ingestion (<code>gmail.readonly</code>)"]
         
         S4["4. Fetch Authentic Activity<br/>Scrape recent posts, comments & reactions"]
-        LI["💼 LinkedIn Public Profile (/in/henryhyunwookim/)"]
+        LI["💼 LinkedIn Public Profile (/in/yourprofile/)"]
         
         S5["5. Two-Stage Gemini LLM Synthesis<br/>Topic selection & high-signal post drafting"]
         GEMINI["✨ Google Gemini API (<code>gemini-3.8-flash</code>)"]
@@ -100,6 +100,13 @@ System state is decoupled into two dedicated Google Cloud Storage blobs under `g
 
 ## Ingestion Sources & Gmail Search Queries
 
+### Design Rationale: Gmail as the Ingestion Hub
+In its current structure and configuration, this system **exclusively reads the user's Gmail inbox** for sourcing information. This design choice is deliberate:
+- **Curated & Automated Upstream**: The user's Gmail inbox is kept clean, organized, and high-signal by independent upstream systems that continuously monitor websites, YouTube channels, and relevant tech news, automatically generating and delivering structured summaries and digests into Gmail.
+- **Centralized Ingestion Point**: By relying on this already-aggregated and filtered inbox, the ghostwriter avoids redundant web scraping, polling multiple third-party APIs, or managing disparate feed credentials during its weekly execution.
+- **Extensible Architecture**: Although Gmail serves as the sole ingestion hub in the present configuration, the codebase is modular. The system can be readily extended or customized to ingest information directly from other external sources (e.g., direct RSS feeds, YouTube APIs, web scrapers, Reddit/Hacker News APIs, or Slack/Discord channels) by adding new collector modules in `src/`.
+
+### Configured Gmail Filter Streams
 The pipeline queries Gmail across four distinct technical streams over a rolling lookback window (default: 7 days):
 
 | Source | Origin / Stream | Gmail Filter Query | Extracted Content |
@@ -108,6 +115,64 @@ The pipeline queries Gmail across four distinct technical streams over a rolling
 | **AI News Digest** | `AI-news-aggregator-KRJP` | `subject:"Daily AI News Digest" newer_than:7d` | Regional East Asian AI policy, enterprise adoptions, and breakthrough announcements |
 | **YouTube Digest** | `youtube-insight-digest` | `subject:"YouTube Intelligence Digest" newer_than:7d` | Technical video summaries, architectural teardowns, and engineering links |
 | **ByteByteGo** | ByteByteGo Newsletter | `from:bytebytego@substack.com newer_than:7d` | System design, cloud scalability patterns, and distributed architecture insights |
+
+### How to Customize the Sourcing Pipeline
+
+The sourcing layer can be customized depending on whether your information lands in Gmail or needs to be fetched from external endpoints:
+
+#### Option 1: Adding or Modifying Gmail Filter Streams (Zero New Infrastructure)
+If new newsletters, summaries, or alerts already land in Gmail:
+1. Open [`src/gmail_reader.py`](file:///src/gmail_reader.py) and navigate to `fetch_weekly_digests()`.
+2. Add your stream identifier and Gmail query to the `queries` list:
+   ```python
+   queries = [
+       ("email_summary", f'("=== EMAIL SUMMARY ===" OR (from:me subject:Fwd:)) newer_than:{days}d'),
+       ("ai_news", f'subject:"Daily AI News Digest" newer_than:{days}d'),
+       ("youtube_digest", f'subject:"YouTube Intelligence Digest" newer_than:{days}d'),
+       ("bytebytego", f'from:bytebytego@substack.com newer_than:{days}d'),
+       # Add your custom newsletter or alert stream:
+       ("arxiv_digest", f'from:no-reply@arxiv.org subject:"cs.AI" newer_than:{days}d'),
+       ("tech_radar", f'label:tech-radar newer_than:{days}d'),
+   ]
+   ```
+3. Any standard Gmail search operator (`from:`, `subject:`, `label:`, `newer_than:`) is supported out of the box.
+4. If your stream requires specialized excerpt extraction (similar to `=== EMAIL SUMMARY ===`), add a parsing condition in `fetch_message_details()`.
+
+#### Option 2: Adding Direct External Connectors (RSS, REST APIs, Scrapers)
+To pull information directly from third-party APIs or feeds without going through Gmail:
+1. **Implement a Source Collector Module**:
+   Create a new module in `src/` (e.g. `src/rss_reader.py`) that returns items adhering to the `EmailDigest` schema:
+   ```python
+   # src/rss_reader.py
+   from src.gmail_reader import EmailDigest
+
+   class RSSReader:
+       def fetch_weekly_feed(self, url: str) -> list[EmailDigest]:
+           # Fetch and parse feed items...
+           return [
+               EmailDigest(
+                   source_type="rss_feed",
+                   subject=entry.title,
+                   sender=entry.author or "RSS Feed",
+                   date_str=entry.published,
+                   body_text=entry.summary,
+                   summary_excerpt=entry.summary[:600],
+                   links=[entry.link],
+                   raw_id=entry.id,
+               )
+           ]
+   ```
+2. **Plug into the Pipeline Runner**:
+   In [`src/main.py`](file:///src/main.py) inside `run_pipeline()`, instantiate your collector and append its results to the `digests` list before passing to Gemini:
+   ```python
+   from src.rss_reader import RSSReader
+
+   # Fetch external sources and merge with Gmail digests
+   external_items = RSSReader().fetch_weekly_feed("https://example.com/feed.xml")
+   digests.extend(external_items)
+   ```
+3. **Log Metrics to Cloud Storage Audit**:
+   Update `digest_stats` in [`src/main.py`](file:///src/main.py) so the new source counts are automatically persisted to `run_log.json` on Google Cloud Storage.
 
 ---
 
@@ -160,79 +225,115 @@ linkedin-post-ghostwriter/
 
 ## Configuration & Environment Variables
 
-While all configuration falls back automatically to Google Cloud Secret Manager and Cloud Storage defaults, options can be overridden via environment variables or [.env.example](file:///.env.example):
+While all configuration falls back automatically to Google Cloud Secret Manager and Cloud Storage defaults, options can be configured via `.env` (using [.env.example](file:///.env.example) as a template):
 
 | Variable | Secret Manager Name | Description | Default / Example |
 |---|---|---|---|
-| `GCP_PROJECT_ID` | — | Google Cloud project identifier | `gen-lang-client-0480639565` |
+| `GCP_PROJECT_ID` | — | Google Cloud project identifier | `your-gcp-project-id` |
 | `GCP_REGION` | — | Cloud Run and Storage region | `asia-northeast1` |
-| `GCS_BUCKET_NAME` | — | Bucket for persistent memory & run logs | `gen-lang-client-0480639565-linkedin-memory` |
-| `GEMINI_API_KEY` | `gemini-api-key` | Google Gemini API key | Resolved from Secret Manager |
+| `GCS_BUCKET_NAME` | — | Bucket for persistent memory & run logs | `your-gcp-project-id-linkedin-memory` |
+| `GEMINI_API_KEY` | `gemini-api-key` | Google Gemini API key | Resolved from Secret Manager / `.env` |
 | `GEMINI_MODEL` | — | Gemini generative model | `gemini-3.8-flash` |
-| `RECIPIENT_EMAIL` | — | Target Gmail address for draft review | `henry.hyunwookim@gmail.com` |
-| `RECIPIENT_NAME` | — | Display name for draft email header | `Henry` |
-| `LINKEDIN_PROFILE_URL` | — | Target public profile URL | `https://www.linkedin.com/in/henryhyunwookim/` |
+| `RECIPIENT_EMAIL` | — | Target Gmail address for draft review | `your_email@gmail.com` |
+| `RECIPIENT_NAME` | — | Display name for draft salutation & prompts | `YourName` |
+| `LINKEDIN_PROFILE_URL` | — | Target public profile URL | `https://www.linkedin.com/in/yourprofile/` |
 | `LINKEDIN_LI_AT` | `linkedin-li-at` *(optional)* | Session cookie for authenticated activity scraping | Optional |
 | `TIMEZONE` | — | Timezone for execution timestamps | `Asia/Tokyo` |
 | `SCHEDULE` | — | Cloud Scheduler cron schedule | `0 21 * * 5` (Friday 9:00 PM JST) |
 
 ---
 
-## Local Development & Execution
+## 🚀 Quickstart: Deploying for Yourself
+
+Follow these steps to set up and deploy your own automated LinkedIn post ghostwriter:
 
 ### 1. Prerequisites
 - Python 3.11+
-- Google Cloud SDK (`gcloud`) authenticated to the project:
-  ```powershell
-  gcloud auth login
-  gcloud config set project gen-lang-client-0480639565
-  ```
+- A Google Cloud Platform account with billing enabled
+- [Google Cloud SDK (`gcloud`)](https://cloud.google.com/sdk/docs/install) installed and logged in
+- A Gemini API key from [Google AI Studio](https://aistudio.google.com/)
 
-### 2. Install Dependencies
+### 2. Clone Repository & Install Dependencies
 ```powershell
+git clone https://github.com/henryhyunwookim/linkedin-post-ghostwriter.git
+cd linkedin-post-ghostwriter
 pip install -r requirements.txt
 ```
 
-### 3. Dry-Run Execution (Preview Draft in Terminal)
-Executes the full pipeline—resolving cloud secrets, reading Gmail digests, scraping LinkedIn activity, and prompting Gemini—without sending an email or mutating Cloud Storage:
+### 3. Configure Local Environment
+Create your `.env` file from the example template:
 ```powershell
-py -3 -m src.main --dry-run
+cp .env.example .env
+```
+Open `.env` and fill in your details:
+- Set `GEMINI_API_KEY` to your Gemini key.
+- Set `RECIPIENT_EMAIL` to your Gmail address.
+- Set `RECIPIENT_NAME` to your first name or preferred author name.
+- Set `LINKEDIN_PROFILE_URL` to your public LinkedIn profile.
+- Set `GCP_PROJECT_ID` to your Google Cloud Project ID.
+
+### 4. Set Up Google Cloud & APIs
+Log in to your Google Cloud account and enable the required services:
+```powershell
+gcloud auth login
+gcloud config set project <your-gcp-project-id>
+
+gcloud services enable `
+    run.googleapis.com `
+    cloudbuild.googleapis.com `
+    artifactregistry.googleapis.com `
+    cloudscheduler.googleapis.com `
+    secretmanager.googleapis.com `
+    storage.googleapis.com
 ```
 
-### 4. Live Pipeline Execution
-Runs the end-to-end pipeline, saves audit logs to GCS, and sends the drafted post directly to Gmail for review:
+### 5. Set Up Gmail OAuth Credentials
+1. Open the [Google Cloud Console Credentials Page](https://console.cloud.google.com/apis/credentials).
+2. Click **Create Credentials** > **OAuth client ID**.
+3. Select **Desktop app** as the Application type, give it a name (e.g. `LinkedIn Ghostwriter Local`), and click **Create**.
+4. Download the client secret JSON file and save it as `credentials.json` in the root directory of this repository (`credentials.json` is ignored by git).
+5. In **Google Cloud Console** > **APIs & Services** > **OAuth consent screen**, add your Gmail address under **Test users**.
+
+### 6. Authorize Gmail Access
+Run the authentication script to generate your local OAuth token:
 ```powershell
-py -3 -m src.main
+python -m src.auth
+```
+A browser window will open prompting you to log in with your Google account and approve the scopes (`gmail.readonly` and `gmail.send`). Once approved, `token.json` is saved locally.
+
+### 7. Test Locally (Dry-Run Preview)
+Test the entire pipeline locally without sending an email or mutating Cloud Storage:
+```powershell
+python -m src.main --dry-run
+```
+This runs digest ingestion, LinkedIn scraping, and Gemini topic drafting, outputting the generated post directly into your terminal.
+
+To send an actual draft review email to your Gmail:
+```powershell
+python -m src.main
 ```
 
-### 5. Sync Secrets to Cloud
-Upload or refresh local credentials in Google Cloud Secret Manager:
-```powershell
-py -3 -m src.sync_secrets
-```
-
----
-
-## Cloud Deployment (Google Cloud Run)
-
-When ready to deploy or update the production container:
-
-### 1. Upload OAuth Token to Secret Manager
-```powershell
-.\deployment\upload_token.ps1
-```
-
-### 2. Provision Cloud Run & Cloud Scheduler
+### 8. Deploy to Google Cloud Run
+Deploy the container and automated weekly Cloud Scheduler trigger:
 ```powershell
 .\deployment\deploy_cloud.ps1
 ```
-This provisions:
-- Artifact Registry container repository.
-- Google Cloud Run service with authenticated Cloud Storage access.
-- Cloud Scheduler job triggering `POST /` every Friday at 21:00 JST via an OIDC service account token.
+This automated script:
+- Creates the Cloud Storage bucket for persistent profile memory and execution logs.
+- Builds and deploys the container service to Google Cloud Run.
+- Creates a dedicated IAM Service Account with invocation permissions.
+- Configures a Cloud Scheduler job triggering the pipeline every Friday at 9:00 PM JST (or your configured schedule).
+
+### 9. Upload OAuth Token & Secrets to Secret Manager
+Sync your Gmail OAuth token and API keys to Google Cloud Secret Manager so the Cloud Run container can run autonomously:
+```powershell
+.\deployment\upload_token.ps1
+python -m src.sync_secrets
+```
+Once uploaded, your ghostwriter will execute automatically on schedule in the cloud every week!
 
 ---
 
 ## License
 
-Private repository. All rights reserved.
+This project is licensed under the [MIT License](LICENSE).

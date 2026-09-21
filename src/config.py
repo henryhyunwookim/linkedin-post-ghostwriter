@@ -59,10 +59,60 @@ def _resolve_cloud_secret(secret_name: str, project_id: str) -> str | None:
     return None
 
 
+def _get_default_project_id() -> str:
+    """Resolves GCP Project ID from env, active gcloud CLI config, or generic fallback."""
+    proj = os.getenv("GCP_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
+    if proj:
+        return proj
+    try:
+        import sys
+
+        is_win = sys.platform == "win32"
+        res = subprocess.run(
+            ["gcloud", "config", "get-value", "project"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+            shell=is_win,
+        )
+        val = res.stdout.strip()
+        if val and "(unset)" not in val:
+            return val
+    except Exception:
+        pass
+    return "your-gcp-project-id"
+
+
+def _get_default_recipient_email() -> str:
+    """Resolves target recipient email from env, active gcloud CLI account, or generic fallback."""
+    email = os.getenv("RECIPIENT_EMAIL")
+    if email:
+        return email
+    try:
+        import sys
+
+        is_win = sys.platform == "win32"
+        res = subprocess.run(
+            ["gcloud", "config", "get-value", "account"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+            shell=is_win,
+        )
+        val = res.stdout.strip()
+        if val and "@" in val and "(unset)" not in val:
+            return val
+    except Exception:
+        pass
+    return "your_email@gmail.com"
+
+
 # ===========================================================================
 # 1. Google Cloud Platform & Serverless Configuration
 # ===========================================================================
-GCP_PROJECT_ID: str = os.getenv("GCP_PROJECT_ID", "gen-lang-client-0480639565")
+GCP_PROJECT_ID: str = _get_default_project_id()
 GCP_REGION: str = os.getenv("GCP_REGION", "asia-northeast1")
 SERVICE_NAME: str = os.getenv("SERVICE_NAME", "linkedin-post-ghostwriter")
 JOB_NAME: str = os.getenv("JOB_NAME", "linkedin-ghostwriter-weekly-trigger")
@@ -102,8 +152,8 @@ GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 # ===========================================================================
 # 3. Email Delivery & OAuth Scopes
 # ===========================================================================
-RECIPIENT_EMAIL: str = os.getenv("RECIPIENT_EMAIL", "henry.hyunwookim@gmail.com")
-RECIPIENT_NAME: str = os.getenv("RECIPIENT_NAME", "Henry")
+RECIPIENT_EMAIL: str = _get_default_recipient_email()
+RECIPIENT_NAME: str = os.getenv("RECIPIENT_NAME", "Author")
 
 # Gmail Scopes:
 # - gmail.readonly: Read digests and email summaries from inbox
@@ -117,7 +167,7 @@ SCOPES: list[str] = [
 # 4. LinkedIn Profile Configuration & Optional Session Authentication
 # ===========================================================================
 LINKEDIN_PROFILE_URL: str = os.getenv(
-    "LINKEDIN_PROFILE_URL", "https://www.linkedin.com/in/henryhyunwookim/"
+    "LINKEDIN_PROFILE_URL", "https://www.linkedin.com/in/yourprofile/"
 )
 
 _raw_li_at = os.getenv("LINKEDIN_LI_AT")

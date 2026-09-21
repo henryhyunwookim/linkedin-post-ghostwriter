@@ -37,7 +37,7 @@ class EmailSender:
         date_str: str,
         digest_stats: dict[str, int],
         recent_topics: list[str],
-        profile_name: str = "Henry Hyunwoo Kim",
+        profile_name: str = "Author",
     ) -> str:
         """Constructs an executive-quality HTML review email."""
         topic = html.escape(draft_result.get("topic", "Weekly AI Insight"))
@@ -219,7 +219,7 @@ class EmailSender:
         date_str: str,
         digest_stats: dict[str, int],
         recent_topics: list[str],
-        profile_name: str = "Henry Hyunwoo Kim",
+        profile_name: str = "Author",
     ) -> dict[str, Any]:
         """Dispatches the draft review email to the user's Gmail address."""
         if not RECIPIENT_EMAIL:

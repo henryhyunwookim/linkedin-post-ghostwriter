@@ -16,8 +16,17 @@ if (Test-Path $envPath) {
     }
 }
 
-$PROJECT_ID = if ($ENV_GCP_PROJECT_ID) { $ENV_GCP_PROJECT_ID } else { "gen-lang-client-0480639565" }
-$SECRET_NAME = if ($ENV_SECRET_NAME) { $ENV_SECRET_NAME } else { "linkedin-ghostwriter-token" }
+$activeGcloudProject = (& gcloud config get-value project 2>$null)
+if ($activeGcloudProject -and $activeGcloudProject.Trim() -eq "(unset)") { $activeGcloudProject = $null }
+
+$PROJECT_ID = if ($ENV_GCP_PROJECT_ID) { $ENV_GCP_PROJECT_ID } elseif ($activeGcloudProject) { $activeGcloudProject.Trim() } else { $null }
+
+if (-not $PROJECT_ID) {
+    Write-Error "GCP Project ID is required. Please set GCP_PROJECT_ID in .env or run 'gcloud config set project <PROJECT_ID>'."
+    exit 1
+}
+
+$SECRET_NAME = if ($ENV_SECRET_NAME) { $ENV_SECRET_NAME } else { "gmail-agent-token" }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\")).Path
 $tokenPath = Join-Path $repoRoot "token.json"

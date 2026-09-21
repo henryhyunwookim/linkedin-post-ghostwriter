@@ -27,11 +27,10 @@ from src.config import LINKEDIN_LI_AT, LINKEDIN_PROFILE_URL
 class LinkedInProfileData:
     """Structured representation of LinkedIn profile information and authentic activity."""
 
-    name: str = "Henry Hyunwoo Kim"
-    headline: str = "AI & Cloud Solutions Architect | Digital Transformation & ODA"
+    name: str = "Author"
+    headline: str = "AI & Cloud Solutions Architect"
     about: str = (
-        "Focusing on AI innovation, digital capacity building, and international "
-        "development cooperation (Korea/Japan & developing nations)."
+        "Focusing on AI system innovation, cloud architecture, and engineering."
     )
     experience_highlights: list[str] = field(default_factory=list)
     actual_posts: list[dict[str, Any]] = field(default_factory=list)
@@ -92,15 +91,14 @@ class LinkedInScraper:
         )
 
         default_data = LinkedInProfileData(
-            name=fallback_profile.get("name", "Henry Hyunwoo Kim"),
+            name=fallback_profile.get("name", os.getenv("RECIPIENT_NAME", "Author")),
             headline=fallback_profile.get(
                 "headline",
-                "AI & Cloud Solutions Architect | Digital Transformation & ODA",
+                "AI & Cloud Solutions Architect",
             ),
             about=fallback_profile.get(
                 "about",
-                "Specializing in generative AI architectures, digital transformation, "
-                "and international development across APAC.",
+                "Specializing in AI system architectures, serverless deployments, and cloud engineering.",
             ),
             experience_highlights=fallback_profile.get("expertise_areas", []),
             actual_posts=fallback_memory.get("post_history", []) if fallback_memory else [],

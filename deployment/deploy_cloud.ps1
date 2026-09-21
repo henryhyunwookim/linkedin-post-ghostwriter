@@ -10,7 +10,7 @@
     in the Asia/Tokyo timezone.
 
 .PARAMETER ProjectId
-    GCP Project ID. Defaults to .env configuration or gen-lang-client-0480639565.
+    GCP Project ID. Defaults to .env configuration or active gcloud project.
 
 .PARAMETER Region
     Deployment region. Defaults to 'asia-northeast1'.
@@ -67,7 +67,16 @@ if (Test-Path $envPath) {
     }
 }
 
-$PROJECT_ID = if ($ProjectId) { $ProjectId } elseif ($ENV_GCP_PROJECT_ID) { $ENV_GCP_PROJECT_ID } else { "gen-lang-client-0480639565" }
+$activeGcloudProject = (& gcloud config get-value project 2>$null)
+if ($activeGcloudProject -and $activeGcloudProject.Trim() -eq "(unset)") { $activeGcloudProject = $null }
+
+$PROJECT_ID = if ($ProjectId) { $ProjectId } elseif ($ENV_GCP_PROJECT_ID) { $ENV_GCP_PROJECT_ID } elseif ($activeGcloudProject) { $activeGcloudProject.Trim() } else { $null }
+
+if (-not $PROJECT_ID) {
+    Write-Error "GCP Project ID is required. Please set GCP_PROJECT_ID in .env, pass -ProjectId, or run 'gcloud config set project <PROJECT_ID>'."
+    exit 1
+}
+
 $REGION = if ($Region) { $Region } elseif ($ENV_GCP_REGION) { $ENV_GCP_REGION } else { "asia-northeast1" }
 $SERVICE_NAME = if ($ServiceName) { $ServiceName } elseif ($ENV_SERVICE_NAME) { $ENV_SERVICE_NAME } else { "linkedin-post-ghostwriter" }
 $JOB_NAME = if ($JobName) { $JobName } elseif ($ENV_JOB_NAME) { $ENV_JOB_NAME } else { "linkedin-ghostwriter-weekly-trigger" }
@@ -122,6 +131,18 @@ if (-not $existingBucket) {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\")).Path
 Set-Location $repoRoot
 
+$envVars = @(
+    "GCP_PROJECT_ID=$PROJECT_ID",
+    "GCS_BUCKET_NAME=$BUCKET_NAME",
+    "GCP_REGION=$REGION",
+    "GEMINI_MODEL=$GEMINI_MODEL"
+)
+if ($ENV_RECIPIENT_EMAIL) { $envVars += "RECIPIENT_EMAIL=$ENV_RECIPIENT_EMAIL" }
+if ($ENV_RECIPIENT_NAME) { $envVars += "RECIPIENT_NAME=$ENV_RECIPIENT_NAME" }
+if ($ENV_LINKEDIN_PROFILE_URL) { $envVars += "LINKEDIN_PROFILE_URL=$ENV_LINKEDIN_PROFILE_URL" }
+if ($ENV_TIMEZONE) { $envVars += "TIMEZONE=$TIMEZONE" }
+$envVarString = $envVars -join ","
+
 Write-Host "[Step 4/6] Deploying container from source (.) to Cloud Run..." -ForegroundColor Cyan
 gcloud run deploy $SERVICE_NAME `
     --source . `
@@ -129,7 +150,7 @@ gcloud run deploy $SERVICE_NAME `
     --no-allow-unauthenticated `
     --timeout 300 `
     --memory 1Gi `
-    --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID,GCS_BUCKET_NAME=$BUCKET_NAME,GCP_REGION=$REGION,GEMINI_MODEL=$GEMINI_MODEL" `
+    --set-env-vars="$envVarString" `
     --quiet
 
 # Retrieve the assigned service URL
