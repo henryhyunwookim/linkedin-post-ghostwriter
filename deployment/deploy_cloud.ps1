@@ -46,7 +46,10 @@ param(
     [string]$Schedule,
 
     [Parameter(Mandatory = $false)]
-    [string]$TimeZone
+    [string]$TimeZone,
+
+    [Parameter(Mandatory = $false)]
+    [string]$GeminiModel
 )
 
 $ErrorActionPreference = "Stop"
@@ -71,6 +74,7 @@ $JOB_NAME = if ($JobName) { $JobName } elseif ($ENV_JOB_NAME) { $ENV_JOB_NAME } 
 $SCHEDULE = if ($Schedule) { $Schedule } elseif ($ENV_SCHEDULE) { $ENV_SCHEDULE } else { "0 21 * * 5" }
 $TIMEZONE = if ($TimeZone) { $TimeZone } elseif ($ENV_TIMEZONE) { $ENV_TIMEZONE } else { "Asia/Tokyo" }
 $BUCKET_NAME = if ($ENV_GCS_BUCKET_NAME) { $ENV_GCS_BUCKET_NAME } else { "$PROJECT_ID-linkedin-memory" }
+$GEMINI_MODEL = if ($GeminiModel) { $GeminiModel } elseif ($ENV_GEMINI_MODEL) { $ENV_GEMINI_MODEL } else { "gemini-3.8-flash" }
 
 Write-Host "===========================================================================" -ForegroundColor Green
 Write-Host " Deploying LinkedIn Post Ghostwriter to Google Cloud..." -ForegroundColor Green
@@ -80,6 +84,7 @@ Write-Host "  Service:    $SERVICE_NAME"
 Write-Host "  Job:        $JOB_NAME"
 Write-Host "  Schedule:   $SCHEDULE ($TIMEZONE) [Friday 9:00 PM JST]"
 Write-Host "  Memory GCS: gs://$BUCKET_NAME"
+Write-Host "  Model:      $GEMINI_MODEL"
 Write-Host "===========================================================================" -ForegroundColor Green
 Write-Host ""
 
@@ -124,7 +129,7 @@ gcloud run deploy $SERVICE_NAME `
     --no-allow-unauthenticated `
     --timeout 300 `
     --memory 1Gi `
-    --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID,GCS_BUCKET_NAME=$BUCKET_NAME,GCP_REGION=$REGION" `
+    --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID,GCS_BUCKET_NAME=$BUCKET_NAME,GCP_REGION=$REGION,GEMINI_MODEL=$GEMINI_MODEL" `
     --quiet
 
 # Retrieve the assigned service URL

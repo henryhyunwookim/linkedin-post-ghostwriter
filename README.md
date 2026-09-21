@@ -8,50 +8,57 @@ Designed with a **100% cloud-native, multi-PC portable architecture**: developer
 
 ## System Architecture
 
+![LinkedIn Post Ghostwriter System Architecture & Flow Overview](assets/architecture_overview.jpg)
+
+### Execution Flow & Service Integration
+
 ```mermaid
 flowchart TB
-    subgraph Trigger["☁️ Cloud Scheduler"]
-        CS["Friday 9:00 PM JST<br/><code>0 21 * * 5 Asia/Tokyo</code>"]
-    end
-
-    subgraph CloudRun["☁️ Cloud Run / Local Developer PC"]
-        APP["Pipeline Runner<br/>(Flask <code>POST /</code> or CLI <code>main.py</code>)"]
+    CS["☁️ Cloud Scheduler<br/><code>0 21 * * 5 Asia/Tokyo</code> (Friday 9:00 PM JST)"]
+    
+    subgraph Pipeline["☁️ Cloud Run Execution Pipeline"]
+        direction TB
         
-        subgraph Pipeline["Main Ghostwriter Pipeline"]
-            direction TB
-            S1["1. Resolve Cloud Secrets<br/>(Secret Manager / gcloud CLI)"]
-            S2["2. Load Profile Memory<br/>(GCS <code>profile_memory.json</code>)"]
-            S3["3. Ingest Weekly Emails<br/>(Gmail API past 7 days)"]
-            S4["4. Fetch Authentic Activity<br/>(LinkedIn Scraper / Verified Memory)"]
-            S5["5. Two-Stage Gemini LLM<br/>(Topic Selection & Drafting)"]
-            S6["6. Dispatch Review Email<br/>(HTML Draft to Gmail)"]
-            S7["7. Persist Memory & Logs<br/>(GCS Memory & Decoupled RunLog)"]
-        end
-
-        APP --> S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
+        APP["Pipeline Runner (<code>main.py</code> / Flask API)"]
+        
+        S1["1. Resolve Cloud Secrets<br/>Fetch API keys & OAuth tokens"]
+        SM[("🔑 GCP Secret Manager")]
+        
+        S2["2. Load Profile Memory<br/>Retrieve baseline profile & authentic history"]
+        GCS_MEM[("💾 Cloud Storage: profile_memory.json")]
+        
+        S3["3. Ingest Weekly Digest Emails<br/>Retrieve 4 newsletter feeds (past 7 days)"]
+        GMAIL_IN["📬 Gmail API: Digest Ingestion (<code>gmail.readonly</code>)"]
+        
+        S4["4. Fetch Authentic Activity<br/>Scrape recent posts, comments & reactions"]
+        LI["💼 LinkedIn Public Profile (/in/henryhyunwookim/)"]
+        
+        S5["5. Two-Stage Gemini LLM Synthesis<br/>Topic selection & high-signal post drafting"]
+        GEMINI["✨ Google Gemini API (<code>gemini-3.8-flash</code>)"]
+        
+        S6["6. Dispatch Review Draft<br/>Send formatted HTML preview for approval"]
+        GMAIL_OUT["📧 Gmail API: Send Review Email (<code>gmail.send</code>)"]
+        
+        S7["7. Persist Memory & Logs<br/>Update authentic posts & operational audit"]
+        GCS_LOG[("📊 Cloud Storage: run_log.json")]
     end
 
-    subgraph GCP["Google Cloud Platform Services"]
-        SM["Secret Manager<br/><code>gemini-api-key</code><br/><code>gmail-agent-token</code><br/><code>gmail-oauth-credentials</code>"]
-        GCS_MEM["Cloud Storage (Memory)<br/><code>profile_memory.json</code>"]
-        GCS_LOG["Cloud Storage (Audit Log)<br/><code>run_log.json</code>"]
-    end
-
-    subgraph External["External Integrations"]
-        GMAIL["Gmail API (OAuth 2.0)<br/><code>gmail.readonly</code> & <code>gmail.send</code>"]
-        GEMINI["Google Gemini API<br/><code>gemini-2.5-flash</code>"]
-        LI["LinkedIn Public Profile<br/><code>/in/henryhyunwookim/</code>"]
-    end
-
-    CS -->|"OIDC Authenticated Trigger"| APP
+    CS -->|"OIDC Trigger"| APP
+    APP --> S1
     S1 <-->|"Resolve Credentials"| SM
-    S2 <-->|"Load Baseline & Post History"| GCS_MEM
-    S3 <-->|"Fetch 4 Source Streams"| GMAIL
-    S4 -->|"Extract Bio & Real Engagements"| LI
-    S5 -->|"Structured JSON Synthesis"| GEMINI
-    S6 -->|"Send Draft Email"| GMAIL
-    S7 -->|"Save Audit & Suggested Topics"| GCS_LOG
-    S7 -->|"Update Authentic Posts"| GCS_MEM
+    S1 --> S2
+    S2 <-->|"Load Baseline State"| GCS_MEM
+    S2 --> S3
+    S3 <-->|"Query 4 Digest Streams"| GMAIL_IN
+    S3 --> S4
+    S4 <-->|"Extract Engagements"| LI
+    S4 --> S5
+    S5 <-->|"Draft Synthesis"| GEMINI
+    S5 --> S6
+    S6 -->|"Dispatch Review Draft"| GMAIL_OUT
+    S6 --> S7
+    S7 -->|"Append Run Metrics"| GCS_LOG
+    S7 -->|"Save Updated State"| GCS_MEM
 ```
 
 ---
@@ -161,7 +168,7 @@ While all configuration falls back automatically to Google Cloud Secret Manager 
 | `GCP_REGION` | — | Cloud Run and Storage region | `asia-northeast1` |
 | `GCS_BUCKET_NAME` | — | Bucket for persistent memory & run logs | `gen-lang-client-0480639565-linkedin-memory` |
 | `GEMINI_API_KEY` | `gemini-api-key` | Google Gemini API key | Resolved from Secret Manager |
-| `GEMINI_MODEL` | — | Gemini generative model | `gemini-2.5-flash` |
+| `GEMINI_MODEL` | — | Gemini generative model | `gemini-3.8-flash` |
 | `RECIPIENT_EMAIL` | — | Target Gmail address for draft review | `henry.hyunwookim@gmail.com` |
 | `RECIPIENT_NAME` | — | Display name for draft email header | `Henry` |
 | `LINKEDIN_PROFILE_URL` | — | Target public profile URL | `https://www.linkedin.com/in/henryhyunwookim/` |
@@ -207,9 +214,6 @@ py -3 -m src.sync_secrets
 ---
 
 ## Cloud Deployment (Google Cloud Run)
-
-> [!IMPORTANT]
-> In accordance with cloud deployment policy, cloud infrastructure is never automatically deployed without explicit review and approval.
 
 When ready to deploy or update the production container:
 
