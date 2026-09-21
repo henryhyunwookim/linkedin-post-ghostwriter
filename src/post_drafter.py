@@ -32,7 +32,7 @@ class PostDrafter:
         self.api_key = api_key or GEMINI_API_KEY
         if not self.api_key:
             raise ValueError(
-                "Gemini API key is required. Set GEMINI_API_KEY in .env or pass it to PostDrafter."
+                "Gemini API key is required. Ensure 'gemini-api-key' exists in Secret Manager or set GEMINI_API_KEY."
             )
         self.model_name = model_name or GEMINI_MODEL
         genai.configure(api_key=self.api_key)

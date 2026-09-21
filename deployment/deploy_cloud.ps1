@@ -49,7 +49,13 @@ param(
     [string]$TimeZone,
 
     [Parameter(Mandatory = $false)]
-    [string]$GeminiModel
+    [string]$GeminiModel,
+
+    [Parameter(Mandatory = $false)]
+    [string]$RecipientEmail,
+
+    [Parameter(Mandatory = $false)]
+    [string]$LinkedinProfileUrl
 )
 
 $ErrorActionPreference = "Stop"
@@ -73,7 +79,7 @@ if ($activeGcloudProject -and $activeGcloudProject.Trim() -eq "(unset)") { $acti
 $PROJECT_ID = if ($ProjectId) { $ProjectId } elseif ($ENV_GCP_PROJECT_ID) { $ENV_GCP_PROJECT_ID } elseif ($activeGcloudProject) { $activeGcloudProject.Trim() } else { $null }
 
 if (-not $PROJECT_ID) {
-    Write-Error "GCP Project ID is required. Please set GCP_PROJECT_ID in .env, pass -ProjectId, or run 'gcloud config set project <PROJECT_ID>'."
+    Write-Error "GCP Project ID is required. Pass -ProjectId or run 'gcloud config set project <PROJECT_ID>'."
     exit 1
 }
 
@@ -131,15 +137,22 @@ if (-not $existingBucket) {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\")).Path
 Set-Location $repoRoot
 
+$recipientEmail = if ($RecipientEmail) { $RecipientEmail } elseif ($ENV_RECIPIENT_EMAIL) { $ENV_RECIPIENT_EMAIL } else {
+    $act = (& gcloud config get-value account 2>$null)
+    if ($act -and $act -match '@' -and $act.Trim() -ne "(unset)") { $act.Trim() } else { $null }
+}
+
+$linkedinProfile = if ($LinkedinProfileUrl) { $LinkedinProfileUrl } elseif ($ENV_LINKEDIN_PROFILE_URL) { $ENV_LINKEDIN_PROFILE_URL } else { $null }
+
 $envVars = @(
     "GCP_PROJECT_ID=$PROJECT_ID",
     "GCS_BUCKET_NAME=$BUCKET_NAME",
     "GCP_REGION=$REGION",
     "GEMINI_MODEL=$GEMINI_MODEL"
 )
-if ($ENV_RECIPIENT_EMAIL) { $envVars += "RECIPIENT_EMAIL=$ENV_RECIPIENT_EMAIL" }
+if ($recipientEmail) { $envVars += "RECIPIENT_EMAIL=$recipientEmail" }
 if ($ENV_RECIPIENT_NAME) { $envVars += "RECIPIENT_NAME=$ENV_RECIPIENT_NAME" }
-if ($ENV_LINKEDIN_PROFILE_URL) { $envVars += "LINKEDIN_PROFILE_URL=$ENV_LINKEDIN_PROFILE_URL" }
+if ($linkedinProfile) { $envVars += "LINKEDIN_PROFILE_URL=$linkedinProfile" }
 if ($ENV_TIMEZONE) { $envVars += "TIMEZONE=$TIMEZONE" }
 $envVarString = $envVars -join ","
 
@@ -152,6 +165,11 @@ gcloud run deploy $SERVICE_NAME `
     --memory 1Gi `
     --set-env-vars="$envVarString" `
     --quiet
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Deployment to Cloud Run failed with exit code $LASTEXITCODE."
+    exit $LASTEXITCODE
+}
 
 # Retrieve the assigned service URL
 $SERVICE_URL = (& gcloud run services describe $SERVICE_NAME --region $REGION --format "value(status.url)").Trim()

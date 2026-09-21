@@ -225,7 +225,7 @@ class EmailSender:
         if not RECIPIENT_EMAIL:
             raise ValueError(
                 "Recipient email is required to dispatch LinkedIn draft. "
-                "Please configure RECIPIENT_EMAIL in your .env file."
+                "Please ensure active gcloud account is set or specify RECIPIENT_EMAIL."
             )
 
         topic = draft_result.get("topic", "AI Insight")

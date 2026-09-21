@@ -14,11 +14,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application source code
 COPY src/ ./src/
 
-# Copy local credentials/env files if present during local/private builds.
-# Trailing wildcards ensure 'docker build' succeeds even if these git-ignored files are absent.
-# Security Note: For public image registries, inject secrets via Secret Manager instead.
-COPY credentials.json* .env* ./
-
 # Add /app to PYTHONPATH so we can import 'src' as a package
 ENV PYTHONPATH=/app
 

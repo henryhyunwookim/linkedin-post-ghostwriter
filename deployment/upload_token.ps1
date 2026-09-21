@@ -22,7 +22,7 @@ if ($activeGcloudProject -and $activeGcloudProject.Trim() -eq "(unset)") { $acti
 $PROJECT_ID = if ($ENV_GCP_PROJECT_ID) { $ENV_GCP_PROJECT_ID } elseif ($activeGcloudProject) { $activeGcloudProject.Trim() } else { $null }
 
 if (-not $PROJECT_ID) {
-    Write-Error "GCP Project ID is required. Please set GCP_PROJECT_ID in .env or run 'gcloud config set project <PROJECT_ID>'."
+    Write-Error "GCP Project ID is required. Run 'gcloud config set project <PROJECT_ID>'."
     exit 1
 }
 

@@ -194,7 +194,6 @@ Every post drafted by the system adheres strictly to the following criteria:
 
 ```
 linkedin-post-ghostwriter/
-├── .env.example                 # Reference environment variables specification
 ├── .gcloudignore                # Google Cloud build exclusion rules
 ├── .gitignore                   # Git hygiene, local test & secret prevention
 ├── Dockerfile                   # Production Python 3.11 container image
@@ -223,23 +222,22 @@ linkedin-post-ghostwriter/
 
 ---
 
-## Configuration & Environment Variables
+## Configuration & Cloud Resolution
 
-While all configuration falls back automatically to Google Cloud Secret Manager and Cloud Storage defaults, options can be configured via `.env` (using [.env.example](file:///.env.example) as a template):
+This system is engineered with a **Zero-Local-Secrets** architecture. All runtime configurations, credentials, living persona states, and execution logs are resolved directly from Google Cloud—eliminating the need to store local `.env` files or hardcode secrets on any machine:
 
-| Variable | Secret Manager Name | Description | Default / Example |
+| Parameter | Cloud Source / Resolution Strategy | Description | Default / Fallback |
 |---|---|---|---|
-| `GCP_PROJECT_ID` | — | Google Cloud project identifier | `your-gcp-project-id` |
-| `GCP_REGION` | — | Cloud Run and Storage region | `asia-northeast1` |
-| `GCS_BUCKET_NAME` | — | Bucket for persistent memory & run logs | `your-gcp-project-id-linkedin-memory` |
-| `GEMINI_API_KEY` | `gemini-api-key` | Google Gemini API key | Resolved from Secret Manager / `.env` |
-| `GEMINI_MODEL` | — | Gemini generative model | `gemini-3.8-flash` |
-| `RECIPIENT_EMAIL` | — | Target Gmail address for draft review | `your_email@gmail.com` |
-| `RECIPIENT_NAME` | — | Display name for draft salutation & prompts | `YourName` |
-| `LINKEDIN_PROFILE_URL` | — | Target public profile URL | `https://www.linkedin.com/in/yourprofile/` |
-| `LINKEDIN_LI_AT` | `linkedin-li-at` *(optional)* | Session cookie for authenticated activity scraping | Optional |
-| `TIMEZONE` | — | Timezone for execution timestamps | `Asia/Tokyo` |
-| `SCHEDULE` | — | Cloud Scheduler cron schedule | `0 21 * * 5` (Friday 9:00 PM JST) |
+| `GCP_PROJECT_ID` | Active `gcloud` context (`gcloud config get-value project`) | Google Cloud project identifier | Required via `gcloud` or parameter |
+| `RECIPIENT_EMAIL` | Active `gcloud` account (`gcloud config get-value account`) | Target Gmail address for draft review | Auto-resolved from active login |
+| `GEMINI_API_KEY` | GCP Secret Manager (`gemini-api-key`) | Google Gemini API key | Fetched securely on demand |
+| `GMAIL_TOKEN` | GCP Secret Manager (`gmail-agent-token`) | Gmail OAuth 2.0 access & refresh tokens | Fetched securely on demand |
+| `PROFILE_MEMORY` | GCS (`gs://<PROJECT_ID>-linkedin-memory/linkedin-ghostwriter/profile_memory.json`) | Author profile, background, expertise & past published posts | Loaded from Google Cloud Storage |
+| `RUN_LOG` | GCS (`gs://<PROJECT_ID>-linkedin-memory/linkedin-ghostwriter/run_log.json`) | Audit history and suggested topics to avoid repetition | Updated in Google Cloud Storage |
+| `GCP_REGION` | Deployment script / Cloud Run setting | Deployment and storage location | `asia-northeast1` |
+| `GEMINI_MODEL` | Cloud Run environment / parameter | Gemini model version | `gemini-3.8-flash` |
+| `TIMEZONE` | Cloud Scheduler setting | Execution and audit timestamp timezone | `Asia/Tokyo` |
+| `SCHEDULE` | Cloud Scheduler job | Recurring pipeline execution cron | `0 21 * * 5` (Friday 9:00 PM JST) |
 
 ---
 
@@ -250,7 +248,7 @@ Follow these steps to set up and deploy your own automated LinkedIn post ghostwr
 ### 1. Prerequisites
 - Python 3.11+
 - A Google Cloud Platform account with billing enabled
-- [Google Cloud SDK (`gcloud`)](https://cloud.google.com/sdk/docs/install) installed and logged in
+- [Google Cloud SDK (`gcloud`)](https://cloud.google.com/sdk/docs/install) installed and authenticated
 - A Gemini API key from [Google AI Studio](https://aistudio.google.com/)
 
 ### 2. Clone Repository & Install Dependencies
@@ -260,20 +258,8 @@ cd linkedin-post-ghostwriter
 pip install -r requirements.txt
 ```
 
-### 3. Configure Local Environment
-Create your `.env` file from the example template:
-```powershell
-cp .env.example .env
-```
-Open `.env` and fill in your details:
-- Set `GEMINI_API_KEY` to your Gemini key.
-- Set `RECIPIENT_EMAIL` to your Gmail address.
-- Set `RECIPIENT_NAME` to your first name or preferred author name.
-- Set `LINKEDIN_PROFILE_URL` to your public LinkedIn profile.
-- Set `GCP_PROJECT_ID` to your Google Cloud Project ID.
-
-### 4. Set Up Google Cloud & APIs
-Log in to your Google Cloud account and enable the required services:
+### 3. Authenticate with Google Cloud & Enable APIs
+Log in to your Google Cloud account, set your target project, and enable the required services:
 ```powershell
 gcloud auth login
 gcloud config set project <your-gcp-project-id>
@@ -287,28 +273,41 @@ gcloud services enable `
     storage.googleapis.com
 ```
 
-### 5. Set Up Gmail OAuth Credentials
+### 4. Set Up Gmail OAuth Credentials
 1. Open the [Google Cloud Console Credentials Page](https://console.cloud.google.com/apis/credentials).
 2. Click **Create Credentials** > **OAuth client ID**.
-3. Select **Desktop app** as the Application type, give it a name (e.g. `LinkedIn Ghostwriter Local`), and click **Create**.
-4. Download the client secret JSON file and save it as `credentials.json` in the root directory of this repository (`credentials.json` is ignored by git).
+3. Select **Desktop app** as the Application type, give it a descriptive name (e.g. `LinkedIn Ghostwriter Local`), and click **Create**.
+4. Download the client secret JSON file and save it as `credentials.json` in the root directory of this repository (`credentials.json` is protected by `.gitignore` and will never be committed).
 5. In **Google Cloud Console** > **APIs & Services** > **OAuth consent screen**, add your Gmail address under **Test users**.
 
-### 6. Authorize Gmail Access
+### 5. Authorize Gmail Access
 Run the authentication script to generate your local OAuth token:
 ```powershell
 python -m src.auth
 ```
-A browser window will open prompting you to log in with your Google account and approve the scopes (`gmail.readonly` and `gmail.send`). Once approved, `token.json` is saved locally.
+A browser window will prompt you to log in with your Google account and grant the `gmail.readonly` and `gmail.send` scopes. Once authorized, `token.json` is created locally.
+
+### 6. Sync Gemini API Key & Secrets to Cloud Secret Manager
+Upload your Gemini API key and credentials to Google Cloud Secret Manager so the system can run without local secret files:
+```powershell
+# Set your Gemini API key in Secret Manager
+$key = Read-Host "Enter your Gemini API Key" -AsSecureString
+$bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($key)
+$plainKey = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+$plainKey | gcloud secrets create gemini-api-key --data-file=- --project=<your-gcp-project-id> --replication-policy="automatic"
+
+# Sync credentials to Secret Manager
+python -m src.sync_secrets
+```
 
 ### 7. Test Locally (Dry-Run Preview)
-Test the entire pipeline locally without sending an email or mutating Cloud Storage:
+Verify the complete pipeline locally without sending an email or mutating Cloud Storage:
 ```powershell
 python -m src.main --dry-run
 ```
-This runs digest ingestion, LinkedIn scraping, and Gemini topic drafting, outputting the generated post directly into your terminal.
+The pipeline automatically pulls your `gemini-api-key` and `gmail-agent-token` from Secret Manager, reads recent email digests from Gmail, and outputs the generated post directly into your terminal.
 
-To send an actual draft review email to your Gmail:
+To dispatch an actual draft preview email to your Gmail:
 ```powershell
 python -m src.main
 ```
@@ -318,19 +317,18 @@ Deploy the container and automated weekly Cloud Scheduler trigger:
 ```powershell
 .\deployment\deploy_cloud.ps1
 ```
-This automated script:
-- Creates the Cloud Storage bucket for persistent profile memory and execution logs.
-- Builds and deploys the container service to Google Cloud Run.
-- Creates a dedicated IAM Service Account with invocation permissions.
-- Configures a Cloud Scheduler job triggering the pipeline every Friday at 9:00 PM JST (or your configured schedule).
+This script will:
+- Create the Cloud Storage bucket for persistent profile memory and execution logs.
+- Build and deploy the container service to Google Cloud Run.
+- Create a dedicated IAM Service Account with invocation permissions.
+- Configure a Cloud Scheduler job triggering the pipeline every Friday at 9:00 PM JST.
 
-### 9. Upload OAuth Token & Secrets to Secret Manager
-Sync your Gmail OAuth token and API keys to Google Cloud Secret Manager so the Cloud Run container can run autonomously:
+### 9. Upload OAuth Token to Cloud Secret Manager
+Ensure Cloud Run has access to the authorized Gmail token:
 ```powershell
 .\deployment\upload_token.ps1
-python -m src.sync_secrets
 ```
-Once uploaded, your ghostwriter will execute automatically on schedule in the cloud every week!
+Your ghostwriter is now fully operational in the cloud with zero local secrets required!
 
 ---
 
