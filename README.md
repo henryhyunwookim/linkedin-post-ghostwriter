@@ -63,6 +63,34 @@ flowchart TB
 
 ---
 
+## 🏛️ Technical & Architectural Decisions
+
+- **Gmail as the Central Ingestion Hub over Scattered External Scraping**:
+  - *Decision*: Ingest all weekly intelligence inputs exclusively via structured search queries against the user's Gmail inbox (`from:me`, `subject:`, `newer_than:7d`), synthesizing digests delivered by upstream agents (`AI-news-aggregator-KRJP`, `youtube-insight-digest`, `gmail-agent`, and newsletters).
+  - *Context & Motivation*: Querying dozens of disparate external web pages, video transcripts, and RSS feeds during a weekly batch job introduces multi-service rate limits, authentication sprawl, and scraper fragility.
+  - *Rationale & Alternatives Considered*: Specialized upstream agents already filter, deduplicate, and deliver clean digests into Gmail. Using Gmail as the ingestion hub consolidates data sourcing into a single authenticated API call (`gmail.readonly`) with zero redundant infrastructure.
+  - *Consequences & Impact*: High execution resilience, zero external scraper fragility during the weekly run, and effortless extensibility by adjusting Gmail filter queries.
+
+- **Decoupled Two-Blob State Architecture (`profile_memory.json` vs. `run_log.json`)**:
+  - *Decision*: Decouple user persona memory (`profile_memory.json`) from operational audit records (`run_log.json`) on Google Cloud Storage.
+  - *Context & Motivation*: The ghostwriter requires long-term memory of verified human perspectives and recent activities, while also needing rolling topic history to prevent thematic repetition across consecutive weeks.
+  - *Rationale & Alternatives Considered*: Conflating generated AI drafts with authentic user history risks model collapse (the agent echoing its own past generations rather than the user's genuine voice). Storing them in separate blobs guarantees that `profile_memory.json` contains *only* verified human-authored posts, while `run_log.json` tracks suggested topics and operational logs.
+  - *Consequences & Impact*: Preserves authentic human voice over long-term operations without synthetic feedback-loop drift.
+
+- **Human-in-the-Loop Review Email over Direct LinkedIn API Publishing**:
+  - *Decision*: Dispatch drafted posts directly to Gmail for human review and one-click publishing rather than automatically posting to LinkedIn via API or headless browser automation.
+  - *Context & Motivation*: Professional reputation on LinkedIn requires editorial precision; automated publishing carries risks of tone inaccuracies. Furthermore, LinkedIn's official personal posting API requires restrictive enterprise partner approvals, and unofficial automation risks account restrictions.
+  - *Rationale & Alternatives Considered*: Sending an interactive HTML review draft with source citations gives the practitioner full editorial discretion with zero friction, while avoiding ToS violations.
+  - *Consequences & Impact*: Zero account suspension risk, high editorial quality, and effortless one-click copy/edit workflow.
+
+- **Multi-PC Portability via Secret Manager with Dual-Mode ADC / CLI Fallback**:
+  - *Decision*: Resolve all API keys and OAuth tokens dynamically from Google Cloud Secret Manager at runtime, with automated fallback from Python SDK ADC to the active `gcloud` CLI session.
+  - *Context & Motivation*: Working across multiple workstations (Windows, macOS, Cloud Run) typically requires copying `.env` files and OAuth token artifacts, creating credential drift and security risks.
+  - *Rationale & Alternatives Considered*: Secret Manager serves as the single source of truth. The dual-mode client enables immediate execution on any machine with `gcloud auth login` without local secret files.
+  - *Consequences & Impact*: Frictionless cross-machine portability and zero uncommitted credentials in local workspaces.
+
+---
+
 ## Multi-PC Portability (Zero-Friction Cloud Configuration)
 
 This repository is engineered to work seamlessly on any development machine without manually distributing `.env`, `credentials.json`, `token.json`, or local state files:
