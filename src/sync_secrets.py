@@ -71,6 +71,20 @@ def _set_secret(secret_id: str, secret_value: str, project_id: str) -> bool:
             shell=is_win,
         )
         print(f"[SyncSecrets] Successfully synced secret: {secret_id}")
+
+        # Auto-prune old versions via gcloud CLI
+        try:
+            list_cmd = ["gcloud", "secrets", "versions", "list", secret_id, f"--project={project_id}", "--filter=state:ENABLED", "--format=value(name)"]
+            list_res = subprocess.run(list_cmd, capture_output=True, text=True, shell=is_win)
+            if list_res.returncode == 0:
+                active_vers = [v.strip().split("/")[-1] for v in list_res.stdout.splitlines() if v.strip()]
+                if len(active_vers) > 1:
+                    sorted_vers = sorted(active_vers, key=lambda x: int(x) if x.isdigit() else 0, reverse=True)
+                    for old_v in sorted_vers[1:]:
+                        subprocess.run(["gcloud", "secrets", "versions", "destroy", old_v, f"--secret={secret_id}", f"--project={project_id}", "--quiet"], shell=is_win, capture_output=True)
+        except Exception:
+            pass
+
         return True
     except Exception as exc:
         print(f"[SyncSecrets] Error syncing {secret_id}: {exc}")

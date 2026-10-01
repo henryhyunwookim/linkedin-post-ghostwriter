@@ -104,8 +104,9 @@ This repository is engineered to work seamlessly on any development machine with
    - When running locally on developer machines where ADC might be absent or expired, the system automatically falls back to invoking the active `gcloud` CLI session (`gcloud secrets versions access`) seamlessly across Windows, macOS, and Linux.
 3. **On-Demand Local Token Cache**:
    - If an OAuth refresh is required locally, the client credentials JSON is automatically fetched into the OS temp directory (`tempfile.gettempdir()`), avoiding any uncommitted secret clutter in the workspace.
-4. **Secret Synchronization Utility**:
+4. **Secret Synchronization & Cost Hygiene**:
    - Run `python -m src.sync_secrets` from any machine to upload or sync local credentials to Secret Manager in one step.
+   - Enforces automated single-version retention: whenever OAuth tokens or secrets update, superseded versions are automatically destroyed to stay strictly within the GCP free tier.
 
 ---
 

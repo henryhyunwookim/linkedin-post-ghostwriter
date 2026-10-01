@@ -143,13 +143,23 @@ def save_token_to_secret_manager(creds: Credentials) -> None:
         parent = f"projects/{project_id}/secrets/{SECRET_NAME}"
         token_json = creds.to_json()
 
-        client.add_secret_version(
+        new_version = client.add_secret_version(
             request={
                 "parent": parent,
                 "payload": {"data": token_json.encode("UTF-8")},
             }
         )
         print("[Auth] Successfully saved refreshed token to Secret Manager.")
+
+        # Auto-prune old versions to prevent runaway Secret Manager storage costs
+        try:
+            new_version_id = new_version.name.split("/")[-1]
+            for version in client.list_secret_versions(request={"parent": parent}):
+                v_id = version.name.split("/")[-1]
+                if v_id != new_version_id and version.state == secretmanager.SecretVersion.State.ENABLED:
+                    client.destroy_secret_version(request={"name": version.name})
+        except Exception as prune_err:
+            print(f"[Auth] Note: Failed to prune old secret versions: {prune_err}")
     except Exception as e:
         print(f"[Auth] Error saving token to Secret Manager: {e}")
 
