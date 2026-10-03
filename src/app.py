@@ -21,6 +21,12 @@ from src.main import run_pipeline
 app: Flask = Flask(__name__)
 
 
+@app.route("/health", methods=["GET"])
+def health_check() -> tuple[Response, int]:
+    """Lightweight health check endpoint for Cloud Run and monitoring probes."""
+    return jsonify({"status": "healthy", "service": "linkedin-post-ghostwriter"}), 200
+
+
 @app.route("/", methods=["POST", "GET"])
 def trigger_ghostwriter() -> tuple[Response, int]:
     """HTTP trigger route for scheduled weekly execution."""

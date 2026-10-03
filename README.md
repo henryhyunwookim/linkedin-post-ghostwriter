@@ -140,7 +140,7 @@ The pipeline queries Gmail across four distinct technical streams over a rolling
 
 | Source | Origin / Stream | Gmail Filter Query | Extracted Content |
 |---|---|---|---|
-| **gmail-agent** | Internal Gmail summarizer | `("=== EMAIL SUMMARY ===" OR (from:me subject:Fwd:)) newer_than:7d` | Isolates `=== EMAIL SUMMARY ===` blocks, key discussion points, and action items |
+| **gmail-agent** | Internal Gmail summarizer | `(label:ActionRequired OR label:ReadLater OR (from:me subject:Fwd:)) newer_than:7d` | Isolates executive briefings (`Summary`, `Key insights`, `Action required`) |
 | **AI News Digest** | `AI-news-aggregator-KRJP` | `subject:"Daily AI News Digest" newer_than:7d` | Regional East Asian AI policy, enterprise adoptions, and breakthrough announcements |
 | **YouTube Digest** | `youtube-insight-digest` | `subject:"YouTube Intelligence Digest" newer_than:7d` | Technical video summaries, architectural teardowns, and engineering links |
 | **ByteByteGo** | ByteByteGo Newsletter | `from:bytebytego@substack.com newer_than:7d` | System design, cloud scalability patterns, and distributed architecture insights |
@@ -155,7 +155,7 @@ If new newsletters, summaries, or alerts already land in Gmail:
 2. Add your stream identifier and Gmail query to the `queries` list:
    ```python
    queries = [
-       ("email_summary", f'("=== EMAIL SUMMARY ===" OR (from:me subject:Fwd:)) newer_than:{days}d'),
+       ("email_briefing", f'(label:ActionRequired OR label:ReadLater OR (from:me subject:Fwd:)) newer_than:{days}d'),
        ("ai_news", f'subject:"Daily AI News Digest" newer_than:{days}d'),
        ("youtube_digest", f'subject:"YouTube Intelligence Digest" newer_than:{days}d'),
        ("bytebytego", f'from:bytebytego@substack.com newer_than:{days}d'),
@@ -165,7 +165,7 @@ If new newsletters, summaries, or alerts already land in Gmail:
    ]
    ```
 3. Any standard Gmail search operator (`from:`, `subject:`, `label:`, `newer_than:`) is supported out of the box.
-4. If your stream requires specialized excerpt extraction (similar to `=== EMAIL SUMMARY ===`), add a parsing condition in `fetch_message_details()`.
+4. If your stream requires specialized excerpt extraction (similar to `extract_briefing_block()`), add a parsing condition in `fetch_message_details()`.
 
 #### Option 2: Adding Direct External Connectors (RSS, REST APIs, Scrapers)
 To pull information directly from third-party APIs or feeds without going through Gmail:

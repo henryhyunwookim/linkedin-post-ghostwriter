@@ -4,7 +4,7 @@ LinkedIn Post Ghostwriter - Gmail Reader Module.
 Purpose:
     Retrieves and parses incoming emails from the user's Gmail inbox over the
     past N days (default 7 days). Targets four primary sources:
-      1. gmail-agent email summaries (body contains '=== EMAIL SUMMARY ===')
+      1. gmail-agent email briefings (labeled 'ActionRequired' or 'ReadLater', or Fwd: from me with structured AI briefings)
       2. AI News Digest (subject contains 'Daily AI News Digest')
       3. YouTube Digest (subject contains 'YouTube Intelligence Digest')
       4. ByteByteGo Substack newsletter (from: bytebytego@substack.com)
@@ -27,7 +27,7 @@ from googleapiclient.errors import HttpError
 class EmailDigest:
     """Represents a structured email digest retrieved from Gmail."""
 
-    source_type: str  # "email_summary" | "ai_news" | "youtube_digest" | "bytebytego"
+    source_type: str  # "email_briefing" | "ai_news" | "youtube_digest" | "bytebytego"
     subject: str
     sender: str
     date_str: str
@@ -94,17 +94,63 @@ def _extract_text_and_links_from_part(part: dict) -> tuple[str, list[str]]:
     return text_content.strip(), deduped_links
 
 
-def extract_summary_block(text: str) -> str:
-    """Extract '=== EMAIL SUMMARY ===' block if present in gmail-agent forwards."""
-    if "=== EMAIL SUMMARY ===" in text:
-        start_idx = text.find("=== EMAIL SUMMARY ===")
-        # Look for the separator line closing the summary
-        closing_match = re.search(r"={10,}", text[start_idx + 22 :])
-        if closing_match:
-            end_idx = start_idx + 22 + closing_match.end()
-            return text[start_idx:end_idx].strip()
-        # Fallback: take first 1500 chars after the header
-        return text[start_idx : start_idx + 1500].strip()
+def extract_briefing_block(text: str) -> str:
+    """Extract structured AI briefing block from modern gmail-agent forwards.
+
+    The modern gmail-agent generates executive intelligence briefings containing:
+      - Subject / From header
+      - Summary (Executive summary)
+      - Key insights
+      - External source findings / Takeaways / Things to watch
+      - Action required (Yes/No + Reason)
+      - Links
+    """
+    if not text:
+        return ""
+
+    # Locate the start of the briefing (e.g., 'Summary' header or preceding 'Subject:' header)
+    start_idx = -1
+    summary_match = re.search(
+        r"(?:^|\n)\s*(?:Subject:[^\n]+\n(?:From:[^\n]+\n)?)?\s*Summary\s*(?:\n|$)",
+        text,
+        re.IGNORECASE,
+    )
+    if summary_match:
+        start_idx = summary_match.start()
+        if text[start_idx] == "\n":
+            start_idx += 1
+    else:
+        # Fallback to standalone 'Summary' line
+        alt_match = re.search(r"(?:^|\n)\s*Summary\s*(?:\n|$)", text, re.IGNORECASE)
+        if alt_match:
+            start_idx = alt_match.start()
+            if text[start_idx] == "\n":
+                start_idx += 1
+
+    if start_idx != -1:
+        briefing_text = text[start_idx:]
+
+        # Stop at forwarded message boundary if raw original email is appended
+        fwd_match = re.search(
+            r"(?:-{5,}\s*Forwarded message\s*-{5,}|From:\s*.*?Date:\s*.*?Subject:\s*.*?To:)",
+            briefing_text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if fwd_match and fwd_match.start() > 50:
+            briefing_text = briefing_text[: fwd_match.start()].strip()
+
+        # Stop after 'Links' or 'Action required' section if present
+        end_match = re.search(
+            r"(?:Action required\s*\n\s*(?:Yes|No)\s*\n\s*Reason:[^\n]+(?:\n\s*Links\s*\n(?:-[^\n]+\n?)+)?)",
+            briefing_text,
+            re.IGNORECASE,
+        )
+        if end_match:
+            return briefing_text[: end_match.end()].strip()
+
+        # Fallback boundary: take first 2500 chars of briefing
+        return briefing_text[:2500].strip()
+
     return ""
 
 
@@ -149,10 +195,14 @@ class GmailReader:
             # Extract body text and hyperlinks
             body_text, links = _extract_text_and_links_from_part(payload)
 
-            # Specific summary excerpt extraction for gmail-agent
+            # Specific briefing excerpt extraction for gmail-agent
             summary_excerpt = ""
-            if source_type == "email_summary" or "=== EMAIL SUMMARY ===" in body_text:
-                summary_excerpt = extract_summary_block(body_text)
+            if (
+                source_type == "email_briefing"
+                or "Key insights" in body_text
+                or "Action required" in body_text
+            ):
+                summary_excerpt = extract_briefing_block(body_text)
 
             # If no summary excerpt but it's another digest, provide first 500 chars
             if not summary_excerpt and body_text:
@@ -177,8 +227,11 @@ class GmailReader:
         print(f"[GmailReader] Searching inbox for digests from the past {days} days...")
 
         queries = [
-            # 1. gmail-agent email summaries
-            ("email_summary", f'("=== EMAIL SUMMARY ===" OR (from:me subject:Fwd:)) newer_than:{days}d'),
+            # 1. gmail-agent executive intelligence briefings
+            (
+                "email_briefing",
+                f'(label:ActionRequired OR label:ReadLater OR (from:me subject:Fwd:)) newer_than:{days}d',
+            ),
             # 2. Daily AI News Digest: Korea & Japan
             ("ai_news", f'subject:"Daily AI News Digest" newer_than:{days}d'),
             # 3. YouTube Intelligence Digest
@@ -202,9 +255,16 @@ class GmailReader:
 
                 digest = self.fetch_message_details(msg_id, source_type)
                 if digest and digest.body_text.strip():
-                    # For email_summary, ensure either marker or Fwd: subject is verified
-                    if source_type == "email_summary":
-                        if "=== EMAIL SUMMARY ===" not in digest.body_text and not digest.subject.startswith("Fwd:"):
+                    # For email_briefing, verify it contains briefing sections or valid agent markers
+                    if source_type == "email_briefing":
+                        is_agent_briefing = (
+                            "Summary" in digest.body_text
+                            and any(
+                                marker in digest.body_text
+                                for marker in ("Key insights", "Action required", "Things to watch", "Takeaways")
+                            )
+                        )
+                        if not is_agent_briefing:
                             continue
                     digests.append(digest)
 

@@ -80,8 +80,8 @@ class EmailSender:
         <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
             <tr>
                 <td style="padding: 6px; text-align: center; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
-                    <div style="font-size: 16px; font-weight: 700; color: #0284c7;">{digest_stats.get('email_summary', 0)}</div>
-                    <div style="font-size: 10.5px; color: #64748b; text-transform: uppercase;">Agent Summaries</div>
+                    <div style="font-size: 16px; font-weight: 700; color: #0284c7;">{digest_stats.get('email_briefing', 0)}</div>
+                    <div style="font-size: 10.5px; color: #64748b; text-transform: uppercase;">Agent Briefings</div>
                 </td>
                 <td style="width: 8px;"></td>
                 <td style="padding: 6px; text-align: center; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">

@@ -1,0 +1,35 @@
+# Git & IDE
+.git/
+.gitignore
+.gcloudignore
+.vscode/
+.idea/
+
+# Bytecode & Caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environments & Dependencies
+.venv/
+venv/
+ENV/
+env/
+
+# Secrets & Local State
+.env
+.env.local
+token.json
+service_account*.json
+credentials.json
+profile_memory.json
+state.json
+
+# Logs & Temporary Files
+*.log
+tmp/
+temp/
+deployment/

@@ -1,3 +1,6 @@
+# Version control
+.git/
+
 # Compiled Python files
 __pycache__/
 *.py[cod]

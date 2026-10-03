@@ -72,7 +72,7 @@ def run_pipeline(dry_run: bool = False, days: int = 7) -> dict[str, Any]:
         digests = reader.fetch_weekly_digests(days=days)
 
         digest_stats: dict[str, int] = {
-            "email_summary": sum(1 for d in digests if d.source_type == "email_summary"),
+            "email_briefing": sum(1 for d in digests if d.source_type == "email_briefing"),
             "ai_news": sum(1 for d in digests if d.source_type == "ai_news"),
             "youtube_digest": sum(1 for d in digests if d.source_type == "youtube_digest"),
             "bytebytego": sum(1 for d in digests if d.source_type == "bytebytego"),
